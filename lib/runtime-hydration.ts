@@ -42,7 +42,7 @@ function mergeScope<T extends { groupId?: string; brandId?: string; siteId?: str
 }
 
 export function hydrateUsers(users: User[]) {
-  return users.map((user) => {
+  const hydratedUsers = users.map((user) => {
     const seedUser = seedUserById.get(user.id);
     const scopedSeedUser = seedUser ?? seedData.users.find((candidate) => candidate.site === user.site) ?? defaultScopedUser;
 
@@ -54,6 +54,11 @@ export function hydrateUsers(users: User[]) {
       siteId: user.siteId ?? scopedSeedUser.siteId,
     };
   });
+
+  const knownUserIds = new Set(hydratedUsers.map((user) => user.id));
+  const missingSeedUsers = seedData.users.filter((user) => !knownUserIds.has(user.id));
+
+  return [...hydratedUsers, ...missingSeedUsers];
 }
 
 export function hydrateProspects(prospects: Prospect[]) {
