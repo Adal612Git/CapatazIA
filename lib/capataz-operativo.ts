@@ -279,6 +279,173 @@ function createSeedRuntime(): RuntimeEnvelope {
   };
 }
 
+function ensureSeedArtifact<T extends { id: string }>(collection: T[], artifact: T) {
+  if (!collection.some((entry) => entry.id === artifact.id)) {
+    collection.unshift(artifact);
+  }
+}
+
+function seedDemoThread(
+  runtime: RuntimeEnvelope,
+  options: {
+    phone: string;
+    report?: GeneratedReport;
+    analysis?: OperationalExtraction;
+    messages: Array<Pick<ConversationMessage, "role" | "text">>;
+    note?: OperationalNote;
+    suggestion?: OperationalSuggestion;
+  },
+) {
+  const thread = ensureThread(runtime, options.phone, "mock_whatsapp");
+
+  if (thread.messages.length > 1) {
+    return false;
+  }
+
+  const seededMessages = thread.messages.slice(0, 1);
+  options.messages.forEach((message, index) => {
+    seededMessages.push({
+      id: crypto.randomUUID(),
+      role: message.role,
+      text: message.text,
+      createdAt: new Date(Date.now() - (options.messages.length - index) * 60_000).toISOString(),
+    });
+  });
+
+  thread.messages = seededMessages;
+  thread.latestAnalysis = options.analysis ?? null;
+  thread.latestReport = options.report ?? null;
+
+  if (options.report) {
+    ensureSeedArtifact(runtime.state.reports, options.report);
+  }
+  if (options.note) {
+    ensureSeedArtifact(runtime.state.notes, options.note);
+  }
+  if (options.suggestion) {
+    ensureSeedArtifact(runtime.state.suggestions, options.suggestion);
+  }
+
+  return true;
+}
+
+function ensureSeedThreads(runtime: RuntimeEnvelope) {
+  const ricardo = runtime.state.users.find((user) => user.email === "ricardo@capataz.ai" || user.id === "usr-admin");
+  const victor = runtime.state.users.find((user) => user.email === "victor@capataz.ai" || user.id === "usr-victor-demo");
+
+  let changed = false;
+
+  if (ricardo?.phone) {
+    changed =
+      seedDemoThread(runtime, {
+        phone: ricardo.phone,
+        analysis: {
+          intent: "report_request",
+          summary: "Ricardo pidió corte multisucursal y foco de bloqueo comercial.",
+          detectedTasks: ["Consolidar corte comercial de agencias Puebla Centro y Angelopolis"],
+          blockers: ["Expedientes faltantes", "Campanas abiertas en servicio"],
+          followUps: ["Presionar cierre de operaciones listas"],
+          requestedReport: "general",
+          targetUserName: null,
+          note: "Director de marca revisando cierre del mes.",
+          suggestedTaskTitle: null,
+          suggestedTaskDescription: null,
+          suggestedAssigneeName: null,
+          suggestedPriority: null,
+          suggestedDueAt: null,
+          suggestedLocation: null,
+          wantsSuggestions: true,
+        },
+        report: {
+          id: "seed-report-ricardo",
+          kind: "general",
+          title: "Corte multisucursal para Ricardo Perez",
+          body: "Puebla Centro trae mejor avance en pruebas y cierres. Angelopolis necesita resolver campanas abiertas y expedientes con documentos faltantes para no enfriar el mes.",
+          generatedAt: nowIso(),
+          targetUserId: ricardo.id,
+        },
+        note: {
+          id: "seed-note-ricardo",
+          createdAt: nowIso(),
+          createdByUserId: ricardo.id,
+          source: "assistant_summary",
+          title: "Lectura corporativa inicial",
+          body: "El director prioriza comparativo de agencias, bloqueos de credito y retencion post-venta.",
+        },
+        suggestion: {
+          id: "seed-suggestion-ricardo",
+          createdAt: nowIso(),
+          title: "Subir presion sobre cierres calientes",
+          body: "Concentrar a gerencia comercial en operaciones ready_to_close y expedientes missing_documents para mover el cierre semanal.",
+          severity: "warning",
+        },
+        messages: [
+          { role: "user", text: "Capataz, dame corte general de las agencias y dime donde se nos esta atorando el cierre." },
+          {
+            role: "assistant",
+            text: "Traes mejor ritmo en Puebla Centro. Angelopolis necesita destrabar expedientes y campanas abiertas; te dejo corte ejecutivo y foco inmediato en cierres calientes.",
+          },
+        ],
+      }) || changed;
+  }
+
+  if (victor?.phone) {
+    changed =
+      seedDemoThread(runtime, {
+        phone: victor.phone,
+        analysis: {
+          intent: "team_member",
+          summary: "Victor pidió estatus de junta diaria y seguimiento de vendedores.",
+          detectedTasks: ["Preparar junta diaria", "Revisar pruebas de manejo", "Empujar seguimiento post-venta"],
+          blockers: ["Falta autorizacion de descuento", "Expediente incompleto para cierre"],
+          followUps: ["Llamar a clientes entregados", "Confirmar pruebas del dia"],
+          requestedReport: "team_member",
+          targetUserName: "Diego",
+          note: "Victor revisa junta diaria de su agencia.",
+          suggestedTaskTitle: null,
+          suggestedTaskDescription: null,
+          suggestedAssigneeName: null,
+          suggestedPriority: null,
+          suggestedDueAt: null,
+          suggestedLocation: null,
+          wantsSuggestions: false,
+        },
+        report: {
+          id: "seed-report-victor",
+          kind: "team_member",
+          title: "Corte de junta para Victor Ramirez",
+          body: "Diego trae seguimiento pendiente en post-venta y una operación frenada por descuento. Fernanda viene mejor en pruebas de manejo y expediente más ordenado.",
+          generatedAt: nowIso(),
+          targetUserId: victor.id,
+        },
+        note: {
+          id: "seed-note-victor",
+          createdAt: nowIso(),
+          createdByUserId: victor.id,
+          source: "assistant_summary",
+          title: "Agenda de junta diaria",
+          body: "Abrir con pruebas de manejo del día, operaciones ready_to_close y clientes entregados sin seguimiento.",
+        },
+        suggestion: {
+          id: "seed-suggestion-victor",
+          createdAt: nowIso(),
+          title: "Apretar seguimiento comercial",
+          body: "Pedir a cada vendedor prospectos nuevos, pruebas completadas y clientes contactados antes de cerrar la junta.",
+          severity: "info",
+        },
+        messages: [
+          { role: "user", text: "Capataz, preparame la junta y dime como viene Diego contra el resto." },
+          {
+            role: "assistant",
+            text: "Para la junta: Diego trae post-venta vencida y descuento atorado; Fernanda va mejor en pruebas y orden de expediente. Ya te dejé corte resumido.",
+          },
+        ],
+      }) || changed;
+  }
+
+  return changed;
+}
+
 async function persistRuntime() {
   if (!runtimeCache) {
     return;
@@ -291,7 +458,10 @@ async function loadRuntimeFromDisk() {
   try {
     const parsed = await loadRuntimeSnapshot<RuntimeEnvelope>();
     if (!parsed) {
-      return createSeedRuntime();
+      const seedRuntime = createSeedRuntime();
+      ensureSeedThreads(seedRuntime);
+      await persistRuntimeSnapshot(seedRuntime);
+      return seedRuntime;
     }
     const legacyTaskTitle = parsed.state?.tasks?.[0]?.title ?? "";
     if (legacyTaskTitle.includes("Inspeccion de tablero electrico") || legacyTaskTitle.includes("Entrega de material a cuadrilla")) {
@@ -308,9 +478,16 @@ async function loadRuntimeFromDisk() {
     parsed.state.reports ??= [];
     parsed.state.notes ??= [];
     parsed.state.suggestions ??= [];
+    parsed.threads ??= {};
+    if (ensureSeedThreads(parsed)) {
+      await persistRuntimeSnapshot(parsed);
+    }
     return parsed;
   } catch {
-    return createSeedRuntime();
+    const seedRuntime = createSeedRuntime();
+    ensureSeedThreads(seedRuntime);
+    await persistRuntimeSnapshot(seedRuntime);
+    return seedRuntime;
   }
 }
 
