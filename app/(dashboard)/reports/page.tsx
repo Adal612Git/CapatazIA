@@ -311,10 +311,13 @@ export default function ReportsPage() {
         title="Reportes con narrativa, KPIs y cortes exportables"
         description="Vista ejecutiva para demo: mezcla operación real, proyección comercial y contexto IA en una sola superficie."
         actions={
-          <button className="button-primary" type="button" onClick={exportWorkbook}>
-            <Download size={16} />
-            Exportar Excel
-          </button>
+          <>
+            <span className="report-chip">build reports v2</span>
+            <button className="button-primary" type="button" onClick={exportWorkbook}>
+              <Download size={16} />
+              Exportar Excel
+            </button>
+          </>
         }
       />
 
