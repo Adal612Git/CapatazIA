@@ -1,0 +1,19 @@
+version: "3.9"
+
+services:
+  capataz-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: capataz-app
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env.local
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      CAPATAZ_RUNTIME_FILE: /app/data/capataz-runtime.json
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
