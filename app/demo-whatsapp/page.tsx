@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { seedData } from "@/lib/seed-data";
 
 type DemoUser = {
   id: string;
@@ -10,6 +11,8 @@ type DemoUser = {
   password: string;
   phone: string;
   role: string;
+  site: string;
+  statusLabel: string;
 };
 
 type ChatMessage = {
@@ -33,26 +36,26 @@ type ChatPayload = {
   } | null;
 };
 
-const demoUsers: DemoUser[] = [
-  {
-    id: "ric",
-    label: "Ric",
-    name: "Ricardo Perez",
-    email: "ricardo@capataz.ai",
-    password: "capataz123",
-    phone: "+5213310001001",
-    role: "Admin / Director",
-  },
-  {
-    id: "vic",
-    label: "Vic",
-    name: "Victor Ramirez",
-    email: "victor@capataz.ai",
-    password: "capataz123",
-    phone: "+5213310001009",
-    role: "Owner / Dueño",
-  },
-];
+const roleLabel: Record<string, string> = {
+  admin: "Admin / Director",
+  owner: "Owner / Direccion",
+  supervisor: "Supervisor / Gerencia",
+  operator: "Operador / Campo",
+};
+
+const demoUsers: DemoUser[] = seedData.users
+  .filter((user) => Boolean(user.phone))
+  .map((user) => ({
+    id: user.id,
+    label: user.avatar,
+    name: user.name,
+    email: user.email,
+    password: user.password,
+    phone: user.phone as string,
+    role: roleLabel[user.role] ?? user.role,
+    site: user.site,
+    statusLabel: user.statusLabel,
+  }));
 
 const quickPrompts = [
   "ayuda",
@@ -70,7 +73,7 @@ export default function DemoWhatsAppPage() {
   const [mode, setMode] = useState("rules");
   const [provider, setProvider] = useState("mock");
   const [loading, setLoading] = useState(false);
-  const [summary, setSummary] = useState("Sin lectura todavía.");
+  const [summary, setSummary] = useState("Sin lectura todavia.");
   const [lastReport, setLastReport] = useState<ChatPayload["latestReport"]>(null);
 
   const selectedUser = useMemo(
@@ -95,7 +98,7 @@ export default function DemoWhatsAppPage() {
       setMessages(payload.messages ?? []);
       setMode(payload.mode ?? "rules");
       setProvider(payload.provider ?? "mock");
-      setSummary(payload.latestAnalysis?.summary ?? "Sin lectura todavía.");
+      setSummary(payload.latestAnalysis?.summary ?? "Sin lectura todavia.");
       setLastReport(payload.latestReport ?? null);
       setLoading(false);
     }
@@ -128,7 +131,7 @@ export default function DemoWhatsAppPage() {
     setMessages(payload.messages ?? []);
     setMode(payload.mode ?? "rules");
     setProvider(payload.provider ?? "mock");
-    setSummary(payload.latestAnalysis?.summary ?? "Sin lectura todavía.");
+    setSummary(payload.latestAnalysis?.summary ?? "Sin lectura todavia.");
     setLastReport(payload.latestReport ?? null);
     setInput("");
     setLoading(false);
@@ -145,9 +148,9 @@ export default function DemoWhatsAppPage() {
       }}
     >
       <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
-        <h1 style={{ margin: 0 }}>Demo básica WhatsApp Capataz</h1>
+        <h1 style={{ margin: 0 }}>Demo basica WhatsApp Capataz</h1>
         <p style={{ marginTop: "8px", marginBottom: "24px" }}>
-          Vista simple para presentación. Cambia entre Vic y Ric y usa el chatbot mock como si fuera WhatsApp.
+          Vista simple para presentacion. Usa el mismo elenco operativo del dashboard para probar conversaciones coherentes por rol.
         </p>
 
         <div
@@ -166,7 +169,7 @@ export default function DemoWhatsAppPage() {
               padding: "16px",
             }}
           >
-            <h2 style={{ marginTop: 0, fontSize: "18px" }}>Usuarios demo</h2>
+            <h2 style={{ marginTop: 0, fontSize: "18px" }}>Colaboradores demo</h2>
             <div style={{ display: "grid", gap: "12px" }}>
               {demoUsers.map((user) => (
                 <button
@@ -185,9 +188,11 @@ export default function DemoWhatsAppPage() {
                   <strong>{user.label}</strong>
                   <div>{user.name}</div>
                   <div style={{ fontSize: "13px", color: "#555" }}>{user.role}</div>
+                  <div style={{ fontSize: "13px", color: "#555" }}>{user.site}</div>
                   <div style={{ fontSize: "13px", color: "#555", marginTop: "8px" }}>email: {user.email}</div>
                   <div style={{ fontSize: "13px", color: "#555" }}>pass: {user.password}</div>
                   <div style={{ fontSize: "13px", color: "#555" }}>whats: {user.phone}</div>
+                  <div style={{ fontSize: "13px", color: "#555", marginTop: "8px" }}>{user.statusLabel}</div>
                 </button>
               ))}
             </div>
@@ -233,7 +238,7 @@ export default function DemoWhatsAppPage() {
               </div>
               {lastReport ? (
                 <div style={{ fontSize: "13px" }}>
-                  <strong>Último reporte:</strong> {lastReport.title}
+                  <strong>Ultimo reporte:</strong> {lastReport.title}
                 </div>
               ) : null}
             </div>
@@ -270,7 +275,7 @@ export default function DemoWhatsAppPage() {
                 </div>
               ))}
 
-              {!messages.length ? <div>No hay conversación todavía.</div> : null}
+              {!messages.length ? <div>No hay conversacion todavia.</div> : null}
             </div>
 
             <div style={{ padding: "12px", borderTop: "1px solid #eee", background: "#fff" }}>
@@ -281,10 +286,11 @@ export default function DemoWhatsAppPage() {
                     type="button"
                     onClick={() => setInput(prompt)}
                     style={{
-                      border: "1px solid #ddd",
+                      border: "1px solid #f0d1b1",
+                      background: "#fff7ef",
+                      color: "#a95715",
                       borderRadius: "999px",
-                      background: "#fff8f2",
-                      padding: "6px 10px",
+                      padding: "8px 12px",
                       cursor: "pointer",
                     }}
                   >
@@ -293,40 +299,40 @@ export default function DemoWhatsAppPage() {
                 ))}
               </div>
 
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void sendMessage(input);
-                }}
-                style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "8px" }}
-              >
-                <input
+              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "10px" }}>
+                <textarea
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
-                  placeholder="Escribe como si fuera WhatsApp..."
+                  placeholder="Escribe como si fueras el colaborador..."
+                  rows={3}
                   style={{
-                    border: "1px solid #ccc",
-                    borderRadius: "10px",
+                    width: "100%",
+                    border: "1px solid #ddd",
+                    borderRadius: "12px",
                     padding: "12px",
-                    fontSize: "14px",
+                    resize: "vertical",
+                    font: "inherit",
                   }}
                 />
+
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={() => void sendMessage(input)}
                   disabled={loading}
                   style={{
-                    border: 0,
-                    borderRadius: "10px",
-                    background: "#25d366",
+                    minWidth: "140px",
+                    border: "none",
+                    borderRadius: "12px",
+                    padding: "12px 16px",
+                    background: loading ? "#d8d8d8" : "#f28c38",
                     color: "#fff",
-                    padding: "0 16px",
+                    cursor: loading ? "not-allowed" : "pointer",
                     fontWeight: 700,
-                    cursor: "pointer",
                   }}
                 >
-                  {loading ? "..." : "Enviar"}
+                  {loading ? "Enviando..." : "Enviar"}
                 </button>
-              </form>
+              </div>
             </div>
           </section>
         </div>

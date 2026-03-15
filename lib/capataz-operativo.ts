@@ -329,9 +329,23 @@ function seedDemoThread(
   return true;
 }
 
+function findRuntimeUser(runtime: RuntimeEnvelope, identifiers: string[]) {
+  const normalized = new Set(identifiers.map((value) => value.toLowerCase()));
+  return (
+    runtime.state.users.find((user) => normalized.has(user.id.toLowerCase()) || normalized.has(user.email.toLowerCase())) ?? null
+  );
+}
+
 function ensureSeedThreads(runtime: RuntimeEnvelope) {
-  const ricardo = runtime.state.users.find((user) => user.email === "ricardo@capataz.ai" || user.id === "usr-admin");
-  const victor = runtime.state.users.find((user) => user.email === "victor@capataz.ai" || user.id === "usr-victor-demo");
+  const ricardo = findRuntimeUser(runtime, ["usr-admin", "ricardo@capataz.ai"]);
+  const victor = findRuntimeUser(runtime, ["usr-victor-demo", "victor@capataz.ai"]);
+  const ian = findRuntimeUser(runtime, ["usr-owner", "ian@capataz.ai"]);
+  const laura = findRuntimeUser(runtime, ["usr-supervisor-1", "laura@capataz.ai"]);
+  const jose = findRuntimeUser(runtime, ["usr-supervisor-2", "jose@capataz.ai"]);
+  const diego = findRuntimeUser(runtime, ["usr-operator-1", "diego@capataz.ai"]);
+  const fernanda = findRuntimeUser(runtime, ["usr-operator-2", "fernanda@capataz.ai"]);
+  const ana = findRuntimeUser(runtime, ["usr-operator-3", "ana@capataz.ai"]);
+  const carlos = findRuntimeUser(runtime, ["usr-operator-4", "carlos@capataz.ai"]);
 
   let changed = false;
 
@@ -438,6 +452,223 @@ function ensureSeedThreads(runtime: RuntimeEnvelope) {
           {
             role: "assistant",
             text: "Para la junta: Diego trae post-venta vencida y descuento atorado; Fernanda va mejor en pruebas y orden de expediente. Ya te dejé corte resumido.",
+          },
+        ],
+      }) || changed;
+  }
+
+  if (ian?.phone) {
+    changed =
+      seedDemoThread(runtime, {
+        phone: ian.phone,
+        analysis: {
+          intent: "business_summary",
+          summary: "Ian pidio panorama ejecutivo de la agencia con foco en cierres y campanas.",
+          detectedTasks: ["Revisar cierre de Jetta", "Atender campanas pendientes", "Presionar seguimiento post-venta"],
+          blockers: ["Avaluo usado bloqueado", "Descuento pendiente de autorizacion"],
+          followUps: ["Revisar conversion por vendedor", "Cerrar pendientes de junta"],
+          requestedReport: "general",
+          targetUserName: null,
+          note: "Gerencia general revisando control diario.",
+          suggestedTaskTitle: null,
+          suggestedTaskDescription: null,
+          suggestedAssigneeName: null,
+          suggestedPriority: null,
+          suggestedDueAt: null,
+          suggestedLocation: null,
+          wantsSuggestions: true,
+        },
+        messages: [
+          { role: "user", text: "Capataz, dame el panorama de la agencia y donde traemos mas riesgo ahorita." },
+          {
+            role: "assistant",
+            text: "Traes riesgo en el avaluo usado, una campana abierta y seguimiento post-venta vencido. El cierre mas caliente sigue siendo Jetta, pero depende de mantener limpio el expediente.",
+          },
+        ],
+      }) || changed;
+  }
+
+  if (laura?.phone) {
+    changed =
+      seedDemoThread(runtime, {
+        phone: laura.phone,
+        analysis: {
+          intent: "team_member",
+          summary: "Laura trae la junta comercial y esta empujando a Diego y Fernanda.",
+          detectedTasks: ["Preparar junta diaria de pendientes comerciales", "Revisar subvencion aplicada al enganche"],
+          blockers: ["Descuento sin autorizacion", "Expediente incompleto para cierre"],
+          followUps: ["Confirmar pruebas de manejo", "Aterrizar clientes entregados sin llamada"],
+          requestedReport: "team_member",
+          targetUserName: "Diego",
+          note: "Gerencia comercial operando junta diaria.",
+          suggestedTaskTitle: null,
+          suggestedTaskDescription: null,
+          suggestedAssigneeName: null,
+          suggestedPriority: null,
+          suggestedDueAt: null,
+          suggestedLocation: null,
+          wantsSuggestions: false,
+        },
+        messages: [
+          { role: "user", text: "Capataz, ordename la junta y dime a quien traigo mas presionado hoy." },
+          {
+            role: "assistant",
+            text: "Abre con pruebas del dia, cierres listos y expedientes trabados. Hoy trae mas presion Diego por post-venta vencida; Fernanda viene mas ordenada en pruebas y expediente.",
+          },
+        ],
+      }) || changed;
+  }
+
+  if (jose?.phone) {
+    changed =
+      seedDemoThread(runtime, {
+        phone: jose.phone,
+        analysis: {
+          intent: "blockers",
+          summary: "Jose esta revisando bloqueos de servicio y toma de usado.",
+          detectedTasks: ["Cerrar avaluo de usado para toma a cuenta"],
+          blockers: ["Diagnostico mecanico pendiente", "Oferta final aun sin negociar"],
+          followUps: ["Escalar taller", "Liberar precio final"],
+          requestedReport: "blockers",
+          targetUserName: null,
+          note: "Gerencia de servicio con foco en destrabe.",
+          suggestedTaskTitle: null,
+          suggestedTaskDescription: null,
+          suggestedAssigneeName: null,
+          suggestedPriority: null,
+          suggestedDueAt: null,
+          suggestedLocation: null,
+          wantsSuggestions: false,
+        },
+        messages: [
+          { role: "user", text: "Capataz, ensename lo que tengo bloqueado en servicio y que me falta para liberarlo." },
+          {
+            role: "assistant",
+            text: "El bloqueo fuerte sigue en el avaluo de usado: falta diagnostico mecanico y cerrar la oferta final con el cliente. Si eso sale hoy, destrabas una operacion relevante.",
+          },
+        ],
+      }) || changed;
+  }
+
+  if (diego?.phone) {
+    changed =
+      seedDemoThread(runtime, {
+        phone: diego.phone,
+        analysis: {
+          intent: "list_tasks",
+          summary: "Diego consulta sus pendientes comerciales y post-venta.",
+          detectedTasks: ["Seguimiento post-venta a entregas de la semana"],
+          blockers: ["Descuento pendiente en una negociacion"],
+          followUps: ["Llamar clientes entregados", "Actualizar CRM post-venta"],
+          requestedReport: null,
+          targetUserName: null,
+          note: "Vendedor con foco en seguimiento.",
+          suggestedTaskTitle: null,
+          suggestedTaskDescription: null,
+          suggestedAssigneeName: null,
+          suggestedPriority: null,
+          suggestedDueAt: null,
+          suggestedLocation: null,
+          wantsSuggestions: false,
+        },
+        messages: [
+          { role: "user", text: "Capataz, cuales son mis pendientes de hoy?" },
+          {
+            role: "assistant",
+            text: "Traes seguimiento post-venta de entregas recientes, una negociacion condicionada por descuento y una prueba de manejo que necesita confirmacion final.",
+          },
+        ],
+      }) || changed;
+  }
+
+  if (fernanda?.phone) {
+    changed =
+      seedDemoThread(runtime, {
+        phone: fernanda.phone,
+        analysis: {
+          intent: "list_prospects",
+          summary: "Fernanda consulta prospectos, pruebas y expediente activo.",
+          detectedTasks: ["Registrar guardia y clientes nuevos del piso", "Expediente de credito completo para Jetta Comfortline"],
+          blockers: [],
+          followUps: ["Confirmar visita de Karla", "Mantener orden del expediente"],
+          requestedReport: null,
+          targetUserName: null,
+          note: "Vendedora con buen ritmo de pruebas.",
+          suggestedTaskTitle: null,
+          suggestedTaskDescription: null,
+          suggestedAssigneeName: null,
+          suggestedPriority: null,
+          suggestedDueAt: null,
+          suggestedLocation: null,
+          wantsSuggestions: false,
+        },
+        messages: [
+          { role: "user", text: "Capataz, dame mis prospectos y como va lo del Jetta." },
+          {
+            role: "assistant",
+            text: "Karla sigue viva y bien perfilada para prueba y cierre. El expediente del Jetta quedo completo y listo para seguir avanzando con financiera.",
+          },
+        ],
+      }) || changed;
+  }
+
+  if (ana?.phone) {
+    changed =
+      seedDemoThread(runtime, {
+        phone: ana.phone,
+        analysis: {
+          intent: "list_post_sale",
+          summary: "Ana revisa seguimientos y servicio recurrente.",
+          detectedTasks: [],
+          blockers: [],
+          followUps: ["Mantener contacto con clientes de servicio", "Documentar experiencia post-servicio"],
+          requestedReport: null,
+          targetUserName: null,
+          note: "Asesoria de servicio con disciplina operativa.",
+          suggestedTaskTitle: null,
+          suggestedTaskDescription: null,
+          suggestedAssigneeName: null,
+          suggestedPriority: null,
+          suggestedDueAt: null,
+          suggestedLocation: null,
+          wantsSuggestions: false,
+        },
+        messages: [
+          { role: "user", text: "Capataz, que seguimientos tengo que cuidar hoy en servicio?" },
+          {
+            role: "assistant",
+            text: "Hoy el foco es mantener el seguimiento post-servicio al dia, capturar experiencia de clientes recientes y no dejar cabos sueltos de recompra.",
+          },
+        ],
+      }) || changed;
+  }
+
+  if (carlos?.phone) {
+    changed =
+      seedDemoThread(runtime, {
+        phone: carlos.phone,
+        analysis: {
+          intent: "list_incidents",
+          summary: "Carlos esta atendiendo campanas y pendientes de refacciones.",
+          detectedTasks: ["Levantar incidente de campana por cliente molesto"],
+          blockers: ["Cliente molesto sin cierre documentado"],
+          followUps: ["Registrar causa", "Acordar siguiente paso con cliente"],
+          requestedReport: null,
+          targetUserName: null,
+          note: "Refacciones y campana bajo control operativo.",
+          suggestedTaskTitle: null,
+          suggestedTaskDescription: null,
+          suggestedAssigneeName: null,
+          suggestedPriority: null,
+          suggestedDueAt: null,
+          suggestedLocation: null,
+          wantsSuggestions: false,
+        },
+        messages: [
+          { role: "user", text: "Capataz, ensename la campana que traigo abierta y que falta cerrar." },
+          {
+            role: "assistant",
+            text: "Traes una campana abierta por cliente molesto. Falta dejar causa clara, gerente que atendio y siguiente paso documentado para cerrarla bien.",
           },
         ],
       }) || changed;
