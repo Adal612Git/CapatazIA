@@ -49,6 +49,7 @@ export default function SettingsPage() {
   const addColumn = useAppStore((state) => state.addColumn);
   const updateScheduledBroadcast = useAppStore((state) => state.updateScheduledBroadcast);
   const runScheduledBroadcastNow = useAppStore((state) => state.runScheduledBroadcastNow);
+  const runTeamReminderNow = useAppStore((state) => state.runTeamReminderNow);
   const [title, setTitle] = useState("");
   const [color, setColor] = useState("#ef7d38");
   const [drafts, setDrafts] = useState<Record<string, BroadcastDraft>>({});
@@ -100,6 +101,18 @@ export default function SettingsPage() {
     const result = await runScheduledBroadcastNow(broadcastId, currentUser.id);
     setBusyId(null);
     setStatusMessage(result.ok ? result.message ?? "Broadcast enviado." : result.message ?? "No se pudo ejecutar el broadcast.");
+  }
+
+  async function triggerTeamReminder() {
+    if (!currentUser) {
+      return;
+    }
+
+    setBusyId("team-reminder");
+    setStatusMessage(null);
+    const result = await runTeamReminderNow(currentUser.id);
+    setBusyId(null);
+    setStatusMessage(result.ok ? result.message ?? "Recordatorio IA enviado." : result.message ?? "No se pudo ejecutar el recordatorio IA.");
   }
 
   return (
@@ -165,6 +178,18 @@ export default function SettingsPage() {
             <div>
               <p className="eyebrow">Broadcasts</p>
               <h3>Himno, cortes y convocatorias</h3>
+            </div>
+          </div>
+
+          <div className="detail-card stack-sm">
+            <div>
+              <strong>Demo IA al equipo completo</strong>
+              <p>Dispara un recordatorio personalizado a cada colaborador usando sus pendientes, bloqueos y contexto operativo real del runtime.</p>
+            </div>
+            <div className="inline-form">
+              <button className="button-primary" type="button" onClick={() => void triggerTeamReminder()} disabled={busyId === "team-reminder"}>
+                Enviar recordatorio IA al equipo
+              </button>
             </div>
           </div>
 

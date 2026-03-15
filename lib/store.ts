@@ -114,6 +114,7 @@ interface AppState {
     actorId: string,
   ) => Promise<{ ok: boolean; message?: string }>;
   runScheduledBroadcastNow: (broadcastId: string, actorId: string) => Promise<{ ok: boolean; message?: string }>;
+  runTeamReminderNow: (actorId: string) => Promise<{ ok: boolean; message?: string }>;
   markAlertRead: (alertId: string) => void;
   addColumn: (title: string, color: string) => void;
 }
@@ -331,6 +332,18 @@ async function runBroadcastNowRequest(broadcastId: string) {
 
   if (!response.ok) {
     throw new Error("No se pudo ejecutar el broadcast");
+  }
+
+  return (await response.json()) as { ok: boolean; delivered: number };
+}
+
+async function runTeamReminderRequest() {
+  const response = await fetch("/api/capataz/broadcasts/team-reminder/run", {
+    method: "POST",
+  });
+
+  if (!response.ok) {
+    throw new Error("No se pudo ejecutar el recordatorio IA al equipo");
   }
 
   return (await response.json()) as { ok: boolean; delivered: number };
@@ -1409,6 +1422,17 @@ export const useAppStore = create<AppState>()(
         await runBroadcastNowRequest(broadcastId);
         await get().syncRuntimeFromServer();
         return { ok: true, message: `Broadcast "${broadcast.title}" enviado.` };
+      },
+      runTeamReminderNow: async (actorId) => {
+        const state = get();
+        const actor = state.users.find((user) => user.id === actorId);
+        if (!actor || (actor.role !== "admin" && actor.role !== "owner")) {
+          return { ok: false, message: "Tu perfil no puede disparar recordatorios IA al equipo." };
+        }
+
+        const result = await runTeamReminderRequest();
+        await get().syncRuntimeFromServer();
+        return { ok: true, message: `Capataz IA envio ${result.delivered} recordatorios personalizados al equipo.` };
       },
       markAlertRead: (alertId) => {
         set((state) => ({

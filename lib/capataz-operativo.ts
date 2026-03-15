@@ -33,6 +33,7 @@ import {
 } from "@/lib/runtime-hydration";
 import { seedData } from "@/lib/seed-data";
 import { loadRuntimeSnapshot, persistRuntimeSnapshot } from "@/lib/runtime-storage";
+import { getWhatsAppProvider, sendWhatsAppText } from "@/lib/channels/whatsapp";
 import type {
   ActivityEntry,
   Alert,
@@ -248,6 +249,82 @@ function renderBroadcastMessage(broadcast: ScheduledBroadcast) {
   return [broadcast.title, broadcast.message, broadcast.audioLabel ? `Audio: ${broadcast.audioLabel}` : null]
     .filter(Boolean)
     .join("\n");
+}
+
+function prioritizeTasks(tasks: Task[]) {
+  const priorityOrder: Record<Priority, number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
+
+  return [...tasks].sort((left, right) => {
+    const byPriority = priorityOrder[left.priority] - priorityOrder[right.priority];
+    if (byPriority !== 0) {
+      return byPriority;
+    }
+    return left.dueAt.localeCompare(right.dueAt);
+  });
+}
+
+function summarizeTopTasks(tasks: Task[]) {
+  const openTasks = prioritizeTasks(tasks.filter((task) => task.columnId !== "done")).slice(0, 2);
+  if (!openTasks.length) {
+    return "No traes tareas abiertas; usa el turno para destrabar al resto del equipo y cerrar pendientes menores.";
+  }
+
+  return openTasks
+    .map((task, index) => `${index + 1}. ${task.title} (${task.columnId === "blocked" ? "bloqueada" : task.columnId})`)
+    .join("\n");
+}
+
+function buildPersonalizedReminder(runtime: RuntimeEnvelope, user: User) {
+  const visibleTasks = getVisibleTasks(runtime, user);
+  const openTasks = visibleTasks.filter((task) => task.columnId !== "done");
+  const blockedTasks = openTasks.filter((task) => task.columnId === "blocked");
+  const overdueTasks = openTasks.filter((task) => new Date(task.dueAt).getTime() < Date.now());
+  const prospects = getVisibleProspects(runtime, user).filter((prospect) => prospect.status !== "closed_won" && prospect.status !== "closed_lost");
+  const operations = getVisibleSalesOperations(runtime, user).filter(
+    (operation) => operation.stage !== "closed_won" && operation.stage !== "closed_lost",
+  );
+  const incidents = getVisibleBellIncidents(runtime, user).filter((incident) => incident.status !== "resolved");
+  const postSale = getVisiblePostSaleFollowUps(runtime, user).filter((followUp) => followUp.status !== "closed");
+
+  const greetingByRole: Record<User["role"], string> = {
+    admin: "Vista general de grupo",
+    owner: "Corte ejecutivo de agencia",
+    supervisor: "Empuje de junta y seguimiento",
+    operator: "Enfoque operativo de hoy",
+  };
+
+  const roleSpecificLine =
+    user.role === "operator"
+      ? `Traes ${openTasks.length} pendientes abiertos, ${blockedTasks.length} bloqueados y ${postSale.length} seguimientos post-venta vivos.`
+      : user.role === "supervisor"
+        ? `Tu equipo visible trae ${openTasks.length} tareas abiertas, ${blockedTasks.length} bloqueos y ${prospects.length} prospectos que requieren empuje.`
+        : user.role === "owner"
+          ? `Tu agencia trae ${operations.length} operaciones vivas, ${incidents.length} campanas abiertas y ${overdueTasks.length} tareas vencidas.`
+          : `Grupo completo: ${openTasks.length} tareas abiertas, ${blockedTasks.length} bloqueadas, ${operations.length} operaciones activas y ${incidents.length} campanas por resolver.`;
+
+  const nextMove =
+    blockedTasks[0]?.title
+      ? `Prioridad IA: destraba "${blockedTasks[0].title}" antes de la siguiente junta.`
+      : openTasks[0]?.title
+        ? `Prioridad IA: mueve hoy "${openTasks[0].title}" para que no se enfrie la operacion.`
+        : prospects[0]?.customerName
+          ? `Prioridad IA: empuja el seguimiento de ${prospects[0].customerName} para no perder ritmo comercial.`
+          : "Prioridad IA: mantente disponible para apoyar cierres, incidencias y seguimiento fino del equipo.";
+
+  return [
+    `Capataz IA | ${greetingByRole[user.role]}`,
+    `Hola ${user.name}.`,
+    roleSpecificLine,
+    "Tus focos inmediatos:",
+    summarizeTopTasks(openTasks),
+    nextMove,
+    'Responde "recibido" o entra al dashboard para mover lo pendiente.',
+  ].join("\n\n");
 }
 
 function cloneSeedState(): RuntimeState {
@@ -737,6 +814,16 @@ function runScheduledBroadcast(runtime: RuntimeEnvelope, broadcast: ScheduledBro
   appendActivity(runtime, "usr-admin", `Broadcast programado enviado: ${broadcast.title}`);
 
   return recipients.length;
+}
+
+async function deliverAssistantMessage(runtime: RuntimeEnvelope, user: User, text: string) {
+  const provider = getWhatsAppProvider();
+  await sendWhatsAppText({
+    to: user.phone as string,
+    text,
+  });
+  const thread = ensureThread(runtime, user.phone as string, provider === "cloud" ? "whatsapp_cloud" : "mock_whatsapp");
+  appendMessage(thread, "assistant", text);
 }
 
 function applyScheduledBroadcasts(runtime: RuntimeEnvelope, now = new Date()) {
@@ -2714,6 +2801,20 @@ export async function runScheduledBroadcastNow(broadcastId: string) {
   const delivered = runScheduledBroadcast(runtime, broadcast);
   await persistRuntime();
   return { ok: true, delivered };
+}
+
+export async function runTeamReminderNow() {
+  const runtime = await refreshRuntime();
+  const recipients = runtime.state.users.filter((user) => Boolean(user.phone));
+
+  for (const user of recipients) {
+    const message = buildPersonalizedReminder(runtime, user);
+    await deliverAssistantMessage(runtime, user, message);
+  }
+
+  appendActivity(runtime, "usr-admin", "Capataz IA envio recordatorios personalizados al equipo completo");
+  await persistRuntime();
+  return { ok: true, delivered: recipients.length };
 }
 
 export async function tickRuntimeAutomation() {
