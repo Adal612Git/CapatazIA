@@ -6,6 +6,7 @@ interface GeminiRequest {
   systemPrompt: string;
   userPrompt: string;
   maxOutputTokens?: number;
+  responseMimeType?: "application/json" | "text/plain";
 }
 
 function getGeminiApiKey() {
@@ -16,7 +17,17 @@ function stripCodeFences(value: string) {
   return value.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/, "").trim();
 }
 
-async function callGemini({ systemPrompt, userPrompt, maxOutputTokens = 400 }: GeminiRequest) {
+function tryExtractTextFromJsonEnvelope(value: string) {
+  try {
+    const parsed = JSON.parse(stripCodeFences(value)) as Record<string, unknown>;
+    const candidate = parsed.response ?? parsed.reply ?? parsed.text ?? parsed.message ?? parsed.body;
+    return typeof candidate === "string" ? candidate.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function callGemini({ systemPrompt, userPrompt, maxOutputTokens = 400, responseMimeType = "text/plain" }: GeminiRequest) {
   const apiKey = getGeminiApiKey();
   if (!apiKey) {
     return null;
@@ -44,7 +55,7 @@ async function callGemini({ systemPrompt, userPrompt, maxOutputTokens = 400 }: G
         temperature: 0.25,
         topP: 0.9,
         maxOutputTokens,
-        responseMimeType: "application/json",
+        responseMimeType,
       },
     }),
   });
@@ -72,8 +83,13 @@ export function geminiEnabled() {
 }
 
 export async function generateGeminiText({ systemPrompt, userPrompt, maxOutputTokens }: GeminiRequest) {
-  const text = await callGemini({ systemPrompt, userPrompt, maxOutputTokens });
-  return text ? stripCodeFences(text) : null;
+  const text = await callGemini({ systemPrompt, userPrompt, maxOutputTokens, responseMimeType: "text/plain" });
+  if (!text) {
+    return null;
+  }
+
+  const normalized = stripCodeFences(text);
+  return tryExtractTextFromJsonEnvelope(normalized) ?? normalized;
 }
 
 export async function generateGeminiJson<T>({
@@ -88,6 +104,7 @@ export async function generateGeminiJson<T>({
     systemPrompt: `${systemPrompt}\nDevuelve solo JSON valido. Sin markdown, sin comentarios, sin texto extra.`,
     userPrompt,
     maxOutputTokens,
+    responseMimeType: "application/json",
   });
 
   if (!text) {
