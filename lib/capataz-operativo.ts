@@ -166,6 +166,14 @@ interface ActionResult {
   suggestions?: OperationalSuggestion[];
 }
 
+interface AutomationResult {
+  reply?: string;
+  note?: OperationalNote | null;
+  suggestions?: OperationalSuggestion[];
+  createdTask?: Task | null;
+  createdAssignee?: User | null;
+}
+
 const extractionSchema = z.object({
   intent: z.string(),
   summary: z.string(),
@@ -201,6 +209,44 @@ function normalizeText(value: string) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function parseTaskInstruction(runtime: RuntimeEnvelope, user: User, message: string) {
+  const match = message.trim().match(/^(?:crea(?:r)?|asigna(?:r)?|programa(?:r)?|agenda(?:r)?)\s+tarea\s+(.+)$/i);
+  if (!match) {
+    return null;
+  }
+
+  let rawTitle = match[1].trim();
+  let assigneeName: string | null = null;
+  const visibleUsers = runtime.state.users
+    .filter((candidate) => canViewUserProfile(user, candidate))
+    .sort((left, right) => right.name.length - left.name.length);
+
+  for (const candidate of visibleUsers) {
+    const variants = [candidate.name, candidate.name.split(" ")[0]].filter(Boolean);
+    for (const variant of variants) {
+      const assigneePattern = new RegExp(`\\s+para\\s+${escapeRegExp(variant)}(?=\\s|$)`, "i");
+      if (!assigneePattern.test(rawTitle)) {
+        continue;
+      }
+      rawTitle = rawTitle.replace(assigneePattern, " ").replace(/\s{2,}/g, " ").trim();
+      assigneeName = candidate.name;
+      break;
+    }
+    if (assigneeName) {
+      break;
+    }
+  }
+
+  return {
+    title: rawTitle || "Nueva tarea operativa",
+    assigneeName,
+  };
 }
 
 function getDateParts(timezone: string, now = new Date()) {
@@ -2064,6 +2110,7 @@ function buildContext(runtime: RuntimeEnvelope, user: User) {
 
 function fallbackExtraction(runtime: RuntimeEnvelope, user: User, message: string): OperationalExtraction {
   const normalized = normalizeText(message);
+  const taskInstruction = parseTaskInstruction(runtime, user, message);
   const matchedTasks = getVisibleTasks(runtime, user)
     .filter((task) => normalized.includes(normalizeText(task.id)) || normalized.includes(normalizeText(task.title).slice(0, 10)))
     .map((task) => `${task.id}: ${task.title}`);
@@ -2079,7 +2126,7 @@ function fallbackExtraction(runtime: RuntimeEnvelope, user: User, message: strin
   else if (normalized.startsWith("reporte ") && targetUser) requestedReport = "team_member";
   else if (normalized.includes("reporte") || normalized.includes("resumen")) requestedReport = "general";
 
-  const createTaskIntent = normalized.startsWith("crea tarea") || normalized.startsWith("asigna tarea");
+  const createTaskIntent = Boolean(taskInstruction);
   const noteIntent = normalized.startsWith("nota") || normalized.startsWith("recuerda");
 
   return {
@@ -2091,9 +2138,9 @@ function fallbackExtraction(runtime: RuntimeEnvelope, user: User, message: strin
     requestedReport,
     targetUserName: targetUser,
     note: noteIntent ? message.replace(/^(nota|recuerda)\s*/i, "").trim() : null,
-    suggestedTaskTitle: createTaskIntent ? message.replace(/^(crea|asigna)\s+tarea\s*/i, "").trim() || "Nueva tarea operativa" : null,
+    suggestedTaskTitle: taskInstruction?.title ?? null,
     suggestedTaskDescription: createTaskIntent ? `Tarea generada desde WhatsApp por ${user.name}.` : null,
-    suggestedAssigneeName: targetUser,
+    suggestedAssigneeName: taskInstruction?.assigneeName ?? targetUser,
     suggestedPriority: normalized.includes("urg") ? "high" : "medium",
     suggestedDueAt: null,
     suggestedLocation: null,
@@ -2125,7 +2172,25 @@ async function analyzeMessage(runtime: RuntimeEnvelope, user: User, message: str
       maxOutputTokens: 700,
     });
 
-    return analysis ?? fallback;
+    if (!analysis) {
+      return fallback;
+    }
+
+    if (fallback.intent === "create_task") {
+      return {
+        ...analysis,
+        intent: "create_task",
+        targetUserName: fallback.targetUserName ?? analysis.targetUserName,
+        suggestedTaskTitle: fallback.suggestedTaskTitle,
+        suggestedTaskDescription: analysis.suggestedTaskDescription ?? fallback.suggestedTaskDescription,
+        suggestedAssigneeName: fallback.suggestedAssigneeName ?? analysis.suggestedAssigneeName,
+        suggestedPriority: analysis.suggestedPriority ?? fallback.suggestedPriority,
+        suggestedDueAt: analysis.suggestedDueAt ?? fallback.suggestedDueAt,
+        suggestedLocation: analysis.suggestedLocation ?? fallback.suggestedLocation,
+      };
+    }
+
+    return analysis;
   } catch {
     return fallback;
   }
@@ -2674,7 +2739,7 @@ function executeRules(runtime: RuntimeEnvelope, user: User, message: string): Ac
   return { intent: "free_text" };
 }
 
-async function applyAutomation(runtime: RuntimeEnvelope, user: User, extraction: OperationalExtraction) {
+async function applyAutomation(runtime: RuntimeEnvelope, user: User, extraction: OperationalExtraction): Promise<AutomationResult> {
   if (extraction.note) {
     const note = appendNote(runtime, {
       createdByUserId: user.id,
@@ -2691,8 +2756,20 @@ async function applyAutomation(runtime: RuntimeEnvelope, user: User, extraction:
     if (created) {
       return {
         reply: `Cree la tarea "${created.task.title}" para ${created.assignee.name}. Vence ${created.task.dueAt.slice(0, 16).replace("T", " ")}.`,
+        createdTask: created.task,
+        createdAssignee: created.assignee,
       };
     }
+
+    return {
+      reply: 'No pude crear la tarea. Intenta con algo como "crear tarea revisar expediente para Diego".',
+    };
+  }
+
+  if (extraction.intent === "create_task") {
+    return {
+      reply: 'No entendi bien la tarea. Usa "crear tarea <pendiente> para <persona>" y la registro en caliente.',
+    };
   }
 
   if (extraction.wantsSuggestions) {
@@ -2714,6 +2791,7 @@ async function generateAssistantReply(
   extraction: OperationalExtraction,
   report: GeneratedReport | null,
   suggestions: OperationalSuggestion[],
+  automation: AutomationResult,
 ) {
   const persona = getAssistantPersonaForUserId(user.id);
   const baseline = [renderExtraction(extraction)];
@@ -2733,12 +2811,15 @@ async function generateAssistantReply(
   try {
     const reply = await generateGeminiText({
       systemPrompt:
-        `${persona.stylePrompt} Eres un asistente operativo premium para negocio automotriz. Responde en espanol mexicano, corto, accionable y humano. Si ya existe separacion, reporte o sugerencias, usa eso como base y no inventes datos.`,
+        `${persona.stylePrompt} Eres un asistente operativo premium para negocio automotriz. Responde en espanol mexicano, corto, accionable y humano. Si ya existe separacion, reporte o sugerencias, usa eso como base y no inventes datos. Nunca afirmes que creaste, asignaste o actualizaste algo si la automatizacion confirmada dice que no ocurrio.`,
       userPrompt: [
         `Asistente asignado: ${persona.displayName} (${persona.toneLabel})`,
         `Mensaje del usuario: ${message}`,
         "Contexto del negocio:",
         buildContext(runtime, user),
+        automation.createdTask
+          ? `Automatizacion confirmada: se creo la tarea ${automation.createdTask.id} para ${automation.createdAssignee?.name ?? "sin asignado"}.`
+          : "Automatizacion confirmada: no se creo ninguna tarea ni movimiento irreversible con este mensaje.",
         "Analisis detectado:",
         JSON.stringify(extraction, null, 2),
         report ? `Reporte generado:\n${report.title}\n${report.body}` : "No se genero reporte.",
@@ -2808,7 +2889,7 @@ export async function handleCapatazMessage({
   const reply =
     ruleResult.reply ??
     automation.reply ??
-    (await generateAssistantReply(runtime, user, text, extraction, report, suggestions));
+    (await generateAssistantReply(runtime, user, text, extraction, report, suggestions, automation));
 
   thread.latestAnalysis = extraction;
   thread.latestReport = report ?? null;
