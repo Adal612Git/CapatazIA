@@ -1,6 +1,7 @@
 import { MessageCircleMore } from "lucide-react";
 import { ModuleHeader } from "@/components/module-header";
 import { WhatsAppLab } from "@/components/whatsapp-lab";
+import { azureSpeechReady } from "@/lib/azure-speech";
 import { getPublicCollaboratorContacts } from "@/lib/capataz-operativo";
 import { cloudWhatsAppReady, getWhatsAppProvider } from "@/lib/channels/whatsapp";
 
@@ -8,6 +9,7 @@ export default function WhatsAppPage() {
   const contacts = getPublicCollaboratorContacts();
   const provider = getWhatsAppProvider();
   const cloudReady = cloudWhatsAppReady();
+  const premiumAudioReady = azureSpeechReady();
 
   return (
     <div className="stack-lg">
@@ -27,6 +29,9 @@ export default function WhatsAppPage() {
                 ? "Cloud API lista para webhook y mensajes reales."
                 : "Cloud API seleccionada, pero faltan variables de entorno."
               : "Modo mock activo. Sirve para demo, pruebas y afinar prompts sin costo."}
+          </p>
+          <p>
+            Audio IA: {premiumAudioReady ? "Azure Speech premium activo." : "Fallback al sintetizador del navegador."}
           </p>
         </div>
         <span className={`pill ${cloudReady ? "priority-low" : "priority-medium"}`}>{cloudReady ? "ready" : "setup"}</span>

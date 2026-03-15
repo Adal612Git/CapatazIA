@@ -280,6 +280,7 @@ export default function DemoWhatsAppPage() {
                       <TtsPlayButton
                         text={message.text}
                         label={`Reproducir mensaje de ${assistantPersona.displayName}`}
+                        userId={selectedUser.id}
                         preferredVoiceNames={assistantPersona.preferredVoiceNames}
                       />
                     ) : null}

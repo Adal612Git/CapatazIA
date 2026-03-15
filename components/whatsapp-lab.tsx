@@ -199,6 +199,7 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
                   <TtsPlayButton
                     text={message.text}
                     label={`Reproducir mensaje de ${assistantPersona.displayName}`}
+                    userId={selectedContact?.userId}
                     preferredVoiceNames={assistantPersona.preferredVoiceNames}
                   />
                 ) : null}

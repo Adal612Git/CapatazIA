@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 interface TtsPlayButtonProps {
   text: string;
   label?: string;
+  userId?: string;
   preferredVoiceNames?: string[];
 }
 
@@ -26,15 +27,21 @@ function pickSpanishVoice(voices: SpeechSynthesisVoice[], preferredVoiceNames: s
   );
 }
 
-export function TtsPlayButton({ text, label = "Reproducir audio", preferredVoiceNames = [] }: TtsPlayButtonProps) {
+export function TtsPlayButton({ text, label = "Reproducir audio", userId, preferredVoiceNames = [] }: TtsPlayButtonProps) {
   const [supported, setSupported] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const cachedUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setSupported(typeof window !== "undefined" && "speechSynthesis" in window);
+    setSupported(typeof window !== "undefined");
 
     return () => {
+      if (cachedUrlRef.current) {
+        URL.revokeObjectURL(cachedUrlRef.current);
+      }
+      audioRef.current?.pause();
       if (typeof window !== "undefined" && "speechSynthesis" in window) {
         window.speechSynthesis.cancel();
       }
@@ -42,22 +49,83 @@ export function TtsPlayButton({ text, label = "Reproducir audio", preferredVoice
   }, []);
 
   function stopPlayback() {
-    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    if (typeof window === "undefined") {
       return;
     }
 
-    window.speechSynthesis.cancel();
+    audioRef.current?.pause();
+    audioRef.current = null;
+    if ("speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
     utteranceRef.current = null;
     setSpeaking(false);
   }
 
-  function togglePlayback() {
-    if (!supported || typeof window === "undefined" || !("speechSynthesis" in window)) {
+  async function tryPlayAzureAudio() {
+    if (typeof window === "undefined") {
+      return false;
+    }
+
+    const response = await fetch("/api/tts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        userId,
+      }),
+    });
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const blob = await response.blob();
+    if (cachedUrlRef.current) {
+      URL.revokeObjectURL(cachedUrlRef.current);
+    }
+    const url = URL.createObjectURL(blob);
+    cachedUrlRef.current = url;
+
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    audio.onended = () => {
+      audioRef.current = null;
+      setSpeaking(false);
+    };
+    audio.onerror = () => {
+      audioRef.current = null;
+      setSpeaking(false);
+    };
+    await audio.play();
+    return true;
+  }
+
+  async function togglePlayback() {
+    if (!supported || typeof window === "undefined") {
       return;
     }
 
     if (speaking) {
       stopPlayback();
+      return;
+    }
+
+    setSpeaking(true);
+
+    try {
+      const azurePlayed = await tryPlayAzureAudio();
+      if (azurePlayed) {
+        return;
+      }
+    } catch {
+      // Fallback to browser speech synthesis below.
+    }
+
+    if (!("speechSynthesis" in window)) {
+      setSpeaking(false);
       return;
     }
 
@@ -84,7 +152,6 @@ export function TtsPlayButton({ text, label = "Reproducir audio", preferredVoice
     };
 
     utteranceRef.current = utterance;
-    setSpeaking(true);
     window.speechSynthesis.speak(utterance);
   }
 
