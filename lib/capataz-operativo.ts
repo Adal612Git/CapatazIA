@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { generateGeminiJson, generateGeminiText, geminiEnabled } from "@/lib/ai/gemini";
+import { getAssistantPersonaForUserId } from "@/lib/assistant-personas";
 import {
   canManageBellIncident,
   canManageCommercialEntity,
@@ -280,6 +281,7 @@ function summarizeTopTasks(tasks: Task[]) {
 }
 
 function buildPersonalizedReminder(runtime: RuntimeEnvelope, user: User) {
+  const persona = getAssistantPersonaForUserId(user.id);
   const visibleTasks = getVisibleTasks(runtime, user);
   const openTasks = visibleTasks.filter((task) => task.columnId !== "done");
   const blockedTasks = openTasks.filter((task) => task.columnId === "blocked");
@@ -317,12 +319,13 @@ function buildPersonalizedReminder(runtime: RuntimeEnvelope, user: User) {
           : "Prioridad IA: mantente disponible para apoyar cierres, incidencias y seguimiento fino del equipo.";
 
   return [
-    `Capataz IA | ${greetingByRole[user.role]}`,
+    `${persona.displayName} | ${greetingByRole[user.role]}`,
     `Hola ${user.name}.`,
     roleSpecificLine,
     "Tus focos inmediatos:",
     summarizeTopTasks(openTasks),
     nextMove,
+    persona.reminderFlavor,
     'Responde "recibido" o entra al dashboard para mover lo pendiente.',
   ].join("\n\n");
 }
@@ -2066,10 +2069,12 @@ async function refineReportWithGemini(report: GeneratedReport, runtime: RuntimeE
     return report;
   }
 
+  const persona = getAssistantPersonaForUserId(user.id);
+
   try {
     const body = await generateGeminiText({
       systemPrompt:
-        "Eres Capataz AI. Reescribe reportes operativos en espanol mexicano claro, corto y accionable. No inventes datos.",
+        `${persona.stylePrompt} Reescribe reportes operativos en espanol mexicano claro, corto y accionable. No inventes datos.`,
       userPrompt: [`Usuario: ${user.name}`, "Contexto:", buildContext(runtime, user), "Reporte base:", report.body].join("\n\n"),
       maxOutputTokens: 500,
     });
@@ -2485,10 +2490,11 @@ function executeRules(runtime: RuntimeEnvelope, user: User, message: string): Ac
 
   if (normalized === "sugerencias" || normalized === "que recomiendas" || normalized === "recomendaciones") {
     const suggestions = generateSuggestions(runtime, user);
+    const persona = getAssistantPersonaForUserId(user.id);
     return {
       intent: "suggestions",
       suggestions,
-      reply: ["Sugerencias del Capataz:", ...suggestions.map((item) => `- ${item.title}: ${item.body}`)].join("\n"),
+      reply: [`Sugerencias de ${persona.displayName}:`, ...suggestions.map((item) => `- ${item.title}: ${item.body}`)].join("\n"),
     };
   }
 
@@ -2605,9 +2611,10 @@ async function applyAutomation(runtime: RuntimeEnvelope, user: User, extraction:
 
   if (extraction.wantsSuggestions) {
     const suggestions = generateSuggestions(runtime, user);
+    const persona = getAssistantPersonaForUserId(user.id);
     return {
       suggestions,
-      reply: ["Sugerencias del Capataz:", ...suggestions.map((item) => `- ${item.title}: ${item.body}`)].join("\n"),
+      reply: [`Sugerencias de ${persona.displayName}:`, ...suggestions.map((item) => `- ${item.title}: ${item.body}`)].join("\n"),
     };
   }
 
@@ -2622,6 +2629,7 @@ async function generateAssistantReply(
   report: GeneratedReport | null,
   suggestions: OperationalSuggestion[],
 ) {
+  const persona = getAssistantPersonaForUserId(user.id);
   const baseline = [renderExtraction(extraction)];
 
   if (report) {
@@ -2639,8 +2647,9 @@ async function generateAssistantReply(
   try {
     const reply = await generateGeminiText({
       systemPrompt:
-        "Eres Capataz AI Operativo. Responde en espanol mexicano, corto y accionable. Si ya existe separacion, reporte o sugerencias, usa eso como base y no inventes datos.",
+        `${persona.stylePrompt} Eres un asistente operativo premium para negocio automotriz. Responde en espanol mexicano, corto, accionable y humano. Si ya existe separacion, reporte o sugerencias, usa eso como base y no inventes datos.`,
       userPrompt: [
+        `Asistente asignado: ${persona.displayName} (${persona.toneLabel})`,
         `Mensaje del usuario: ${message}`,
         "Contexto del negocio:",
         buildContext(runtime, user),

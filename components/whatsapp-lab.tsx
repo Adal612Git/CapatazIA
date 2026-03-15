@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useState } from "react";
 import { BookText, FileText, LoaderCircle, MessageCircleMore, Send, Sparkles, Split } from "lucide-react";
+import { getAssistantPersonaForUserId } from "@/lib/assistant-personas";
 import { TtsPlayButton } from "@/components/tts-play-button";
 import type {
   GeneratedReport,
@@ -92,6 +93,7 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
   }, [selectedPhone]);
 
   const selectedContact = contacts.find((contact) => contact.phone === selectedPhone) ?? null;
+  const assistantPersona = getAssistantPersonaForUserId(selectedContact?.userId);
 
   async function sendMessage(text: string) {
     if (!selectedPhone || !text.trim()) {
@@ -174,6 +176,7 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
           <div>
             <p className="eyebrow">Laboratorio</p>
             <h3>{selectedContact ? selectedContact.name : "Selecciona un colaborador"}</h3>
+            <small>{assistantPersona.displayName} | {assistantPersona.toneLabel}</small>
           </div>
           <span className="pill pill-muted">{selectedContact?.phone ?? "sin numero"}</span>
         </div>
@@ -191,8 +194,14 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
               }`}
             >
               <div className="whatsapp-bubble-head">
-                <strong>{message.role === "assistant" ? "Capataz" : message.role === "system" ? "Sistema" : "Colaborador"}</strong>
-                {message.role === "assistant" ? <TtsPlayButton text={message.text} label="Reproducir mensaje de Capataz" /> : null}
+                <strong>{message.role === "assistant" ? assistantPersona.displayName : message.role === "system" ? "Sistema" : "Colaborador"}</strong>
+                {message.role === "assistant" ? (
+                  <TtsPlayButton
+                    text={message.text}
+                    label={`Reproducir mensaje de ${assistantPersona.displayName}`}
+                    preferredVoiceNames={assistantPersona.preferredVoiceNames}
+                  />
+                ) : null}
               </div>
               <p>{message.text}</p>
             </article>

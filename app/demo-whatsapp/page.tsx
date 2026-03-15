@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { getAssistantPersonaForUserId } from "@/lib/assistant-personas";
 import { TtsPlayButton } from "@/components/tts-play-button";
 import { seedData } from "@/lib/seed-data";
 
@@ -81,6 +82,7 @@ export default function DemoWhatsAppPage() {
     () => demoUsers.find((user) => user.id === selectedUserId) ?? demoUsers[0],
     [selectedUserId],
   );
+  const assistantPersona = getAssistantPersonaForUserId(selectedUser.id);
 
   useEffect(() => {
     let cancelled = false;
@@ -231,6 +233,7 @@ export default function DemoWhatsAppPage() {
             >
               <strong>{selectedUser.name}</strong>
               <div style={{ fontSize: "13px", opacity: 0.9 }}>{selectedUser.phone}</div>
+              <div style={{ fontSize: "12px", opacity: 0.82 }}>{assistantPersona.displayName} | {assistantPersona.toneLabel}</div>
             </header>
 
             <div style={{ padding: "12px", borderBottom: "1px solid #eee", background: "#faf7f2" }}>
@@ -271,9 +274,15 @@ export default function DemoWhatsAppPage() {
                 >
                   <div className="whatsapp-bubble-head" style={{ marginBottom: "4px" }}>
                     <div style={{ fontWeight: 700, fontSize: "12px" }}>
-                      {message.role === "user" ? selectedUser.label : message.role === "assistant" ? "Capataz" : "Sistema"}
+                      {message.role === "user" ? selectedUser.label : message.role === "assistant" ? assistantPersona.displayName : "Sistema"}
                     </div>
-                    {message.role === "assistant" ? <TtsPlayButton text={message.text} label="Reproducir mensaje de Capataz" /> : null}
+                    {message.role === "assistant" ? (
+                      <TtsPlayButton
+                        text={message.text}
+                        label={`Reproducir mensaje de ${assistantPersona.displayName}`}
+                        preferredVoiceNames={assistantPersona.preferredVoiceNames}
+                      />
+                    ) : null}
                   </div>
                   {message.text}
                 </div>

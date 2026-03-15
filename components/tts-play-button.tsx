@@ -6,9 +6,18 @@ import { useEffect, useRef, useState } from "react";
 interface TtsPlayButtonProps {
   text: string;
   label?: string;
+  preferredVoiceNames?: string[];
 }
 
-function pickSpanishVoice(voices: SpeechSynthesisVoice[]) {
+function pickSpanishVoice(voices: SpeechSynthesisVoice[], preferredVoiceNames: string[]) {
+  const normalizedPreferences = preferredVoiceNames.map((name) => name.toLowerCase());
+
+  const preferredVoice =
+    voices.find((voice) => normalizedPreferences.some((name) => voice.name.toLowerCase().includes(name))) ?? null;
+  if (preferredVoice) {
+    return preferredVoice;
+  }
+
   return (
     voices.find((voice) => voice.lang.toLowerCase().startsWith("es-mx")) ??
     voices.find((voice) => voice.lang.toLowerCase().startsWith("es")) ??
@@ -17,7 +26,7 @@ function pickSpanishVoice(voices: SpeechSynthesisVoice[]) {
   );
 }
 
-export function TtsPlayButton({ text, label = "Reproducir audio" }: TtsPlayButtonProps) {
+export function TtsPlayButton({ text, label = "Reproducir audio", preferredVoiceNames = [] }: TtsPlayButtonProps) {
   const [supported, setSupported] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
@@ -55,7 +64,7 @@ export function TtsPlayButton({ text, label = "Reproducir audio" }: TtsPlayButto
     window.speechSynthesis.cancel();
 
     const utterance = new SpeechSynthesisUtterance(text);
-    const voice = pickSpanishVoice(window.speechSynthesis.getVoices());
+    const voice = pickSpanishVoice(window.speechSynthesis.getVoices(), preferredVoiceNames);
     if (voice) {
       utterance.voice = voice;
       utterance.lang = voice.lang;
