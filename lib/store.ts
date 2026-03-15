@@ -258,6 +258,45 @@ function refreshScoreSnapshots(state: Pick<AppState, "users" | "tasks" | "checkl
   });
 }
 
+function buildRuntimeSyncSignature(
+  state: Pick<
+    AppState,
+    | "users"
+    | "tasks"
+    | "checklists"
+    | "alerts"
+    | "activity"
+    | "prospects"
+    | "testDrives"
+    | "salesOperations"
+    | "creditFiles"
+    | "bellIncidents"
+    | "postSaleFollowUps"
+    | "scheduledBroadcasts"
+    | "runtimeReports"
+    | "runtimeNotes"
+    | "runtimeSuggestions"
+  >,
+) {
+  return JSON.stringify({
+    users: state.users,
+    tasks: state.tasks,
+    checklists: state.checklists,
+    alerts: state.alerts,
+    activity: state.activity,
+    prospects: state.prospects,
+    testDrives: state.testDrives,
+    salesOperations: state.salesOperations,
+    creditFiles: state.creditFiles,
+    bellIncidents: state.bellIncidents,
+    postSaleFollowUps: state.postSaleFollowUps,
+    scheduledBroadcasts: state.scheduledBroadcasts,
+    runtimeReports: state.runtimeReports,
+    runtimeNotes: state.runtimeNotes,
+    runtimeSuggestions: state.runtimeSuggestions,
+  });
+}
+
 async function fetchRuntimePayload() {
   const response = await fetch("/api/capataz/runtime", {
     method: "GET",
@@ -354,6 +393,29 @@ export const useAppStore = create<AppState>()(
       syncRuntimeFromServer: async () => {
         const payload = hydrateRuntimePayload(await fetchRuntimePayload());
         set((state) => {
+          const nextSignature = buildRuntimeSyncSignature({
+            users: payload.users,
+            tasks: payload.tasks,
+            checklists: payload.checklists,
+            alerts: payload.alerts,
+            activity: payload.activity,
+            prospects: payload.prospects,
+            testDrives: payload.testDrives,
+            salesOperations: payload.salesOperations,
+            creditFiles: payload.creditFiles,
+            bellIncidents: payload.bellIncidents,
+            postSaleFollowUps: payload.postSaleFollowUps,
+            scheduledBroadcasts: payload.scheduledBroadcasts,
+            runtimeReports: payload.reports,
+            runtimeNotes: payload.notes,
+            runtimeSuggestions: payload.suggestions,
+          });
+          const currentSignature = buildRuntimeSyncSignature(state);
+
+          if (currentSignature === nextSignature) {
+            return state;
+          }
+
           const nextState = {
             ...state,
             users: payload.users,

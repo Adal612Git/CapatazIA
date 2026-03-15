@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import {
   Bell,
   Building2,
@@ -55,6 +55,7 @@ export function DashboardShell({
 }>) {
   const pathname = usePathname();
   const currentUser = useCurrentUser();
+  const sessionUserId = useAppStore((state) => state.sessionUserId);
   const workspace = useAppStore((state) => state.workspace);
   const alerts = useAppStore((state) => state.alerts);
   const tasks = useAppStore((state) => state.tasks);
@@ -63,35 +64,37 @@ export function DashboardShell({
   const [syncing, setSyncing] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogSeed, setDialogSeed] = useState(0);
+  const syncInFlightRef = useRef<Promise<void> | null>(null);
+
+  const runSync = useEffectEvent(async () => {
+    if (syncInFlightRef.current) {
+      return syncInFlightRef.current;
+    }
+
+    setSyncing(true);
+    const syncPromise = syncRuntimeFromServer().finally(() => {
+      syncInFlightRef.current = null;
+      setSyncing(false);
+    });
+
+    syncInFlightRef.current = syncPromise;
+    return syncPromise;
+  });
 
   useEffect(() => {
-    if (!currentUser) {
+    if (!sessionUserId) {
       return;
     }
 
-    let cancelled = false;
-
-    async function syncNow() {
-      setSyncing(true);
-      try {
-        await syncRuntimeFromServer();
-      } finally {
-        if (!cancelled) {
-          setSyncing(false);
-        }
-      }
-    }
-
-    void syncNow();
+    void runSync();
     const intervalId = window.setInterval(() => {
-      void syncNow();
+      void runSync();
     }, 15000);
 
     return () => {
-      cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [currentUser, syncRuntimeFromServer]);
+  }, [sessionUserId]);
 
   return (
     <AuthGate>
@@ -177,8 +180,7 @@ export function DashboardShell({
                 className="button-ghost"
                 type="button"
                 onClick={() => {
-                  setSyncing(true);
-                  void syncRuntimeFromServer().finally(() => setSyncing(false));
+                  void runSync();
                 }}
               >
                 <RefreshCw className={syncing ? "spin" : ""} size={16} />
