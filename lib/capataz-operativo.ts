@@ -2,6 +2,7 @@ import { z } from "zod";
 import { generateGeminiJson, generateGeminiText, geminiEnabled } from "@/lib/ai/gemini";
 import { getAssistantPersonaForUserId } from "@/lib/assistant-personas";
 import {
+  canCreateTasks,
   canManageBellIncident,
   canManageCommercialEntity,
   canManageCreditFile,
@@ -2209,6 +2210,63 @@ function renderExtraction(extraction: OperationalExtraction) {
   return parts.join("\n");
 }
 
+function describeTaskAssignmentScope(user: User) {
+  if (!canCreateTasks(user.role)) {
+    return "No con tu perfil actual. Puedes mover y cerrar tus propias tareas, pero para asignarle una nueva a otra persona necesitas que lo haga un supervisor o un admin.";
+  }
+
+  if (user.role === "supervisor") {
+    return "Si, pero solo dentro de tu alcance: misma agencia y tu misma linea operativa. Fuera de eso ya se sale de tu tramo.";
+  }
+
+  if (user.role === "admin") {
+    return "Si. Con tu perfil puedes asignar tareas a cualquier colaborador visible dentro del grupo.";
+  }
+
+  return "Puedes asignar tareas dentro del alcance que te deja tu perfil actual.";
+}
+
+function buildPersonaFallbackReply(
+  user: User,
+  extraction: OperationalExtraction,
+  report: GeneratedReport | null,
+  suggestions: OperationalSuggestion[],
+  automation: AutomationResult,
+) {
+  const persona = getAssistantPersonaForUserId(user.id);
+
+  const personaLead =
+    persona.id === "mateo"
+      ? "Voy al punto:"
+      : persona.id === "bruno"
+        ? "Te lo dejo claro:"
+        : persona.id === "lucia"
+          ? "En corto y con orden:"
+          : persona.id === "sofia"
+            ? "En concreto:"
+            : persona.id === "valeria"
+              ? "Te lo bajo rapido:"
+              : "Directo:";
+
+  if (automation.reply) {
+    return automation.reply;
+  }
+
+  if (report) {
+    return `${personaLead} ${report.title}. ${report.body}`;
+  }
+
+  if (suggestions.length) {
+    return `${personaLead} ${suggestions[0]?.title}: ${suggestions[0]?.body}`;
+  }
+
+  if (extraction.intent === "create_task") {
+    return `${personaLead} no te confirme ninguna alta real. Si quieres registrarla, usa "crear tarea <pendiente> para <persona>" y te digo si quedo hecha o si te falta permiso.`;
+  }
+
+  return `${personaLead} te ayudo con tareas, reportes, bloqueos y seguimiento. Si quieres mover algo, dimelo en formato directo.`;
+}
+
 async function refineReportWithGemini(report: GeneratedReport, runtime: RuntimeEnvelope, user: User) {
   if (!geminiEnabled()) {
     return report;
@@ -2330,6 +2388,16 @@ function executeRules(runtime: RuntimeEnvelope, user: User, message: string): Ac
 
   if (!normalized || normalized === "ayuda" || normalized === "help") {
     return { intent: "help", reply: helpMessage(user) };
+  }
+
+  if (
+    (normalized.includes("puedo poner tareas") ||
+      normalized.includes("le puedo poner tareas") ||
+      normalized.includes("asignar tareas") ||
+      normalized.includes("ponerle tareas")) &&
+    (normalized.includes("mismo rango") || normalized.includes("alguien mas") || normalized.includes("otra persona"))
+  ) {
+    return { intent: "permission_scope", reply: describeTaskAssignmentScope(user) };
   }
 
   if (normalized.includes("mis tareas") || normalized === "pendientes") {
@@ -2752,6 +2820,12 @@ async function applyAutomation(runtime: RuntimeEnvelope, user: User, extraction:
   }
 
   if (extraction.intent === "create_task" && extraction.suggestedTaskTitle) {
+    if (!canCreateTasks(user.role)) {
+      return {
+        reply: describeTaskAssignmentScope(user),
+      };
+    }
+
     const created = createTaskFromPlan(runtime, user, extraction);
     if (created) {
       return {
@@ -2805,7 +2879,7 @@ async function generateAssistantReply(
   }
 
   if (!geminiEnabled()) {
-    return baseline.join("\n\n");
+    return buildPersonaFallbackReply(user, extraction, report, suggestions, automation);
   }
 
   try {
@@ -2828,9 +2902,9 @@ async function generateAssistantReply(
       maxOutputTokens: 600,
     });
 
-    return reply ?? baseline.join("\n\n");
+    return reply ?? buildPersonaFallbackReply(user, extraction, report, suggestions, automation);
   } catch {
-    return baseline.join("\n\n");
+    return buildPersonaFallbackReply(user, extraction, report, suggestions, automation);
   }
 }
 
