@@ -17,6 +17,11 @@ interface ConversationMessage {
   role: "user" | "assistant" | "system";
   text: string;
   createdAt: string;
+  media?: {
+    kind: "chart";
+    url: string;
+    alt: string;
+  };
 }
 
 interface ChatPayload {
@@ -205,6 +210,7 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
                 ) : null}
               </div>
               <p>{message.text}</p>
+              {message.media?.kind === "chart" ? <img className="whatsapp-chart" src={message.media.url} alt={message.media.alt} /> : null}
             </article>
           ))}
 

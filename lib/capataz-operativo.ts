@@ -69,6 +69,11 @@ export interface ConversationMessage {
   role: "user" | "assistant" | "system";
   text: string;
   createdAt: string;
+  media?: {
+    kind: "chart";
+    url: string;
+    alt: string;
+  };
 }
 
 export interface OperationalExtraction {
@@ -328,6 +333,81 @@ function buildPersonalizedReminder(runtime: RuntimeEnvelope, user: User) {
     persona.reminderFlavor,
     'Responde "recibido" o entra al dashboard para mover lo pendiente.',
   ].join("\n\n");
+}
+
+function collectUserSnapshotMetrics(runtime: RuntimeEnvelope, user: User) {
+  const openTasks = getVisibleTasks(runtime, user).filter((task) => task.columnId !== "done");
+  const blockedTasks = openTasks.filter((task) => task.columnId === "blocked");
+  const overdueTasks = openTasks.filter((task) => new Date(task.dueAt).getTime() < Date.now());
+  const prospects = getVisibleProspects(runtime, user).filter((prospect) => prospect.status !== "closed_won" && prospect.status !== "closed_lost");
+  const operations = getVisibleSalesOperations(runtime, user).filter(
+    (operation) => operation.stage !== "closed_won" && operation.stage !== "closed_lost",
+  );
+
+  return {
+    openTasks: openTasks.length,
+    blockedTasks: blockedTasks.length,
+    overdueTasks: overdueTasks.length,
+    prospects: prospects.length,
+    operations: operations.length,
+  };
+}
+
+function buildReminderChartUrl(userId: string) {
+  return `/api/charts/user-summary?userId=${encodeURIComponent(userId)}&ts=${Date.now()}`;
+}
+
+function chartBar(x: number, y: number, width: number, height: number, fill: string, label: string, value: number) {
+  return [
+    `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="14" fill="rgba(255,255,255,0.78)" stroke="rgba(237,111,47,0.18)" />`,
+    `<text x="${x + 18}" y="${y + 28}" font-size="13" font-weight="700" fill="#8f552b">${label}</text>`,
+    `<text x="${x + 18}" y="${y + 62}" font-size="28" font-weight="800" fill="#1f1f1f">${value}</text>`,
+  ].join("");
+}
+
+export async function generateUserSummaryChartSvg(userId: string) {
+  const runtime = await refreshRuntime();
+  const user = runtime.state.users.find((entry) => entry.id === userId);
+  if (!user) {
+    return null;
+  }
+
+  const metrics = collectUserSnapshotMetrics(runtime, user);
+  const persona = getAssistantPersonaForUserId(user.id);
+  const width = 760;
+  const height = 420;
+
+  return `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <defs>
+        <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#fff4ea"/>
+          <stop offset="100%" stop-color="#ffe5cc"/>
+        </linearGradient>
+        <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#f07a2b"/>
+          <stop offset="100%" stop-color="#ffb347"/>
+        </linearGradient>
+      </defs>
+      <rect width="${width}" height="${height}" rx="28" fill="url(#bg)" />
+      <rect x="26" y="24" width="${width - 52}" height="84" rx="24" fill="#fffaf5" stroke="rgba(237,111,47,0.14)" />
+      <text x="48" y="56" font-size="15" font-weight="700" fill="#a05c26">${persona.displayName} | Resumen visual del turno</text>
+      <text x="48" y="86" font-size="28" font-weight="800" fill="#1f1f1f">${user.name}</text>
+      <text x="${width - 48}" y="56" text-anchor="end" font-size="14" font-weight="700" fill="#8f552b">${user.site}</text>
+      <text x="${width - 48}" y="84" text-anchor="end" font-size="13" fill="#8f552b">${persona.toneLabel}</text>
+
+      ${chartBar(32, 132, 160, 108, "#fff", "Pendientes", metrics.openTasks)}
+      ${chartBar(208, 132, 160, 108, "#fff", "Bloqueadas", metrics.blockedTasks)}
+      ${chartBar(384, 132, 160, 108, "#fff", "Vencidas", metrics.overdueTasks)}
+      ${chartBar(560, 132, 160, 108, "#fff", "Prospectos", metrics.prospects)}
+
+      <rect x="32" y="266" width="688" height="116" rx="24" fill="#fffaf5" stroke="rgba(237,111,47,0.14)" />
+      <text x="52" y="300" font-size="15" font-weight="700" fill="#8f552b">Pulso de operacion</text>
+      <rect x="52" y="322" width="620" height="16" rx="8" fill="rgba(237,111,47,0.12)" />
+      <rect x="52" y="322" width="${Math.max(56, Math.min(620, 80 + metrics.openTasks * 48 + metrics.operations * 22 - metrics.blockedTasks * 18))}" height="16" rx="8" fill="url(#accent)" />
+      <text x="52" y="366" font-size="14" fill="#6c4a2f">Operaciones activas: ${metrics.operations} | Este grafico sirve para demo de seguimiento individual en WhatsApp.</text>
+    </svg>
+  `.trim();
 }
 
 function cloneSeedState(): RuntimeState {
@@ -2134,12 +2214,18 @@ function ensureThread(runtime: RuntimeEnvelope, phone: string, channel: CapatazC
   return thread;
 }
 
-function appendMessage(thread: ConversationThread, role: ConversationMessage["role"], text: string) {
+function appendMessage(
+  thread: ConversationThread,
+  role: ConversationMessage["role"],
+  text: string,
+  media?: ConversationMessage["media"],
+) {
   thread.messages.push({
     id: crypto.randomUUID(),
     role,
     text,
     createdAt: nowIso(),
+    media,
   });
 }
 
@@ -2819,6 +2905,12 @@ export async function runTeamReminderNow() {
   for (const user of recipients) {
     const message = buildPersonalizedReminder(runtime, user);
     await deliverAssistantMessage(runtime, user, message);
+    const thread = ensureThread(runtime, user.phone as string, getWhatsAppProvider() === "cloud" ? "whatsapp_cloud" : "mock_whatsapp");
+    appendMessage(thread, "assistant", "Te dejo tambien tu grafico rapido del turno para que lo veas en WhatsApp.", {
+      kind: "chart",
+      url: buildReminderChartUrl(user.id),
+      alt: `Grafico operativo de ${user.name}`,
+    });
   }
 
   appendActivity(runtime, "usr-admin", "Capataz IA envio recordatorios personalizados al equipo completo");

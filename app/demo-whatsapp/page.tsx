@@ -22,6 +22,11 @@ type ChatMessage = {
   role: "user" | "assistant" | "system";
   text: string;
   createdAt: string;
+  media?: {
+    kind: "chart";
+    url: string;
+    alt: string;
+  };
 };
 
 type ChatPayload = {
@@ -286,6 +291,13 @@ export default function DemoWhatsAppPage() {
                     ) : null}
                   </div>
                   {message.text}
+                  {message.media?.kind === "chart" ? (
+                    <img
+                      src={message.media.url}
+                      alt={message.media.alt}
+                      style={{ marginTop: "10px", width: "100%", borderRadius: "12px", border: "1px solid rgba(0,0,0,0.08)" }}
+                    />
+                  ) : null}
                 </div>
               ))}
 
