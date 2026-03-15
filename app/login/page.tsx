@@ -33,7 +33,7 @@ export default function LoginPage() {
         <div className="hero-glow hero-glow-amber" />
         <div className="hero-brand-row">
           <div className="brand-mark-shell brand-mark-shell-lg">
-            <Image alt="Capataz.ai" className="brand-mark-image" height={72} priority src="/brand/capataz-mark.svg" width={72} />
+            <Image alt="Capataz.ai" className="brand-mark-image" height={72} priority src="/brand/logo.png" width={72} />
           </div>
           <div>
             <p className="eyebrow">Capataz.ai | Control Automotriz</p>

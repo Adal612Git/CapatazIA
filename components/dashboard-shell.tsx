@@ -102,7 +102,7 @@ export function DashboardShell({
         <aside className="sidebar">
           <div className="brand-card panel">
             <div className="brand-mark-shell">
-              <Image alt="Capataz.ai" className="brand-mark-image" height={58} priority src="/brand/capataz-mark.svg" width={58} />
+              <Image alt="Capataz.ai" className="brand-mark-image" height={58} priority src="/brand/logo.png" width={58} />
             </div>
             <div className="brand-identity">
               <p className="eyebrow">Capataz.ai</p>

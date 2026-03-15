@@ -16,6 +16,10 @@ const displayFont = Fredoka({
 export const metadata: Metadata = {
   title: "Capataz.ai | Control Automotriz",
   description: "Capataz.ai para agencias automotrices: pipeline comercial, campana, post-venta y visibilidad multisucursal.",
+  icons: {
+    icon: "/brand/logo.png",
+    apple: "/brand/logo.png",
+  },
 };
 
 export default function RootLayout({
