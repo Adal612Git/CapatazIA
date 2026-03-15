@@ -2,6 +2,7 @@
 
 import { startTransition, useEffect, useState } from "react";
 import { BookText, FileText, LoaderCircle, MessageCircleMore, Send, Sparkles, Split } from "lucide-react";
+import { TtsPlayButton } from "@/components/tts-play-button";
 import type {
   GeneratedReport,
   OperationalExtraction,
@@ -189,7 +190,10 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
                     : "whatsapp-bubble-user"
               }`}
             >
-              <strong>{message.role === "assistant" ? "Capataz" : message.role === "system" ? "Sistema" : "Colaborador"}</strong>
+              <div className="whatsapp-bubble-head">
+                <strong>{message.role === "assistant" ? "Capataz" : message.role === "system" ? "Sistema" : "Colaborador"}</strong>
+                {message.role === "assistant" ? <TtsPlayButton text={message.text} label="Reproducir mensaje de Capataz" /> : null}
+              </div>
               <p>{message.text}</p>
             </article>
           ))}

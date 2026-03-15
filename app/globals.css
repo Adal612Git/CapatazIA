@@ -879,6 +879,13 @@ h3 {
   border: 1px solid var(--cap-border);
 }
 
+.whatsapp-bubble-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .whatsapp-bubble p {
   margin: 0.45rem 0 0;
   white-space: pre-wrap;
@@ -913,6 +920,25 @@ h3 {
 
 .whatsapp-report {
   white-space: pre-wrap;
+}
+
+.tts-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid rgba(255, 122, 31, 0.2);
+  background: rgba(255, 248, 242, 0.96);
+  color: #a95715;
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.tts-button-active {
+  background: rgba(255, 122, 31, 0.12);
+  border-color: rgba(255, 122, 31, 0.38);
 }
 
 .whatsapp-composer {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { TtsPlayButton } from "@/components/tts-play-button";
 import { seedData } from "@/lib/seed-data";
 
 type DemoUser = {
@@ -268,8 +269,11 @@ export default function DemoWhatsAppPage() {
                     border: "1px solid rgba(0,0,0,0.08)",
                   }}
                 >
-                  <div style={{ fontWeight: 700, fontSize: "12px", marginBottom: "4px" }}>
-                    {message.role === "user" ? selectedUser.label : message.role === "assistant" ? "Capataz" : "Sistema"}
+                  <div className="whatsapp-bubble-head" style={{ marginBottom: "4px" }}>
+                    <div style={{ fontWeight: 700, fontSize: "12px" }}>
+                      {message.role === "user" ? selectedUser.label : message.role === "assistant" ? "Capataz" : "Sistema"}
+                    </div>
+                    {message.role === "assistant" ? <TtsPlayButton text={message.text} label="Reproducir mensaje de Capataz" /> : null}
                   </div>
                   {message.text}
                 </div>
