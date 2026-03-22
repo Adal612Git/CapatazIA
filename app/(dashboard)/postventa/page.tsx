@@ -2,15 +2,21 @@
 
 import { PhoneCall } from "lucide-react";
 import { ModuleHeader } from "@/components/module-header";
+import { getDomainConfig } from "@/lib/domain-config";
 import { canManagePostSaleFollowUp, canViewPostSaleFollowUp, isSalesUser } from "@/lib/permissions";
 import { useCurrentUser, useAppStore } from "@/lib/store";
 
 export default function PostSalePage() {
   const currentUser = useCurrentUser();
+  const systemMode = useAppStore((state) => state.systemMode);
   const followUps = useAppStore((state) => state.postSaleFollowUps);
   const updatePostSaleFollowUp = useAppStore((state) => state.updatePostSaleFollowUp);
+  const domain = getDomainConfig(systemMode);
 
   const visibleFollowUps = currentUser ? followUps.filter((followUp) => canViewPostSaleFollowUp(currentUser, followUp)) : [];
+  const pendingFollowUps = visibleFollowUps.filter((followUp) => followUp.status === "pending");
+  const atRiskFollowUps = visibleFollowUps.filter((followUp) => followUp.status === "at_risk");
+  const closedFollowUps = visibleFollowUps.filter((followUp) => followUp.status === "closed");
 
   if (!currentUser || !isSalesUser(currentUser)) {
     return (
@@ -31,9 +37,41 @@ export default function PostSalePage() {
     <div className="stack-lg">
       <ModuleHeader
         eyebrow="Post-venta"
-        title="Retencion y seguimiento de clientes"
-        description="Clientes vendidos, contactos pendientes y riesgos de fuga a otra agencia."
+        title={domain.postSaleTitle}
+        description={domain.postSaleDescription}
+        actions={<span className="report-chip">{systemMode === "hospital" ? "Continuity follow-up" : "Retention follow-up"}</span>}
       />
+
+      <section className="hero-grid">
+        <article className="metric-card panel">
+          <div className="metric-top">
+            <span className="metric-label">Pendientes</span>
+          </div>
+          <strong>{pendingFollowUps.length}</strong>
+          <p>Contactos que aun requieren accion o llamada.</p>
+        </article>
+        <article className="metric-card panel">
+          <div className="metric-top">
+            <span className="metric-label">En riesgo</span>
+          </div>
+          <strong>{atRiskFollowUps.length}</strong>
+          <p>Relaciones que piden contencion inmediata.</p>
+        </article>
+        <article className="metric-card panel">
+          <div className="metric-top">
+            <span className="metric-label">Cerrados</span>
+          </div>
+          <strong>{closedFollowUps.length}</strong>
+          <p>Seguimientos ya resueltos dentro del ciclo.</p>
+        </article>
+        <article className="metric-card panel">
+          <div className="metric-top">
+            <span className="metric-label">Enfoque</span>
+          </div>
+          <strong>Retencion</strong>
+          <p>Lectura humana mas premium y accionable por cuenta.</p>
+        </article>
+      </section>
 
       <section className="team-grid">
         {visibleFollowUps.map((followUp) => (
@@ -43,7 +81,7 @@ export default function PostSalePage() {
                 <strong>{followUp.customerName}</strong>
                 <p>{followUp.vehicleModel}</p>
               </div>
-              <span className="pill pill-muted">{followUp.status}</span>
+              <span className="pill pill-muted">{domain.postSaleStatusLabels[followUp.status]}</span>
             </div>
             <p>{followUp.nextStep}</p>
             <div className="report-row">
@@ -55,7 +93,7 @@ export default function PostSalePage() {
                   {followUp.status !== "contacted" ? (
                     <button className="button-secondary" type="button" onClick={() => updatePostSaleFollowUp(followUp.id, "contacted", currentUser.id)}>
                       <PhoneCall size={14} />
-                      Contactado
+                      {systemMode === "hospital" ? "Contactar" : "Contactado"}
                     </button>
                   ) : null}
                   {followUp.status !== "at_risk" ? (

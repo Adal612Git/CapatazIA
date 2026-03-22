@@ -1,5 +1,7 @@
 export type Role = "admin" | "owner" | "supervisor" | "operator";
 
+export type SystemMode = "automotive" | "hospital";
+
 export type Department = "corporate" | "general_management" | "sales" | "service" | "parts" | "admin";
 
 export type Priority = "low" | "medium" | "high" | "critical";
@@ -45,6 +47,7 @@ export interface OrgScope {
 
 export interface Workspace {
   id: string;
+  systemMode: SystemMode;
   name: string;
   industry: string;
   timezone: string;
@@ -279,6 +282,71 @@ export interface WeeklyPoint {
   overdue: number;
 }
 
+export type FinanceAccountKind = "wallet" | "savings" | "credit_line" | "benefits";
+
+export type FinanceMovementType =
+  | "payroll"
+  | "bonus"
+  | "credit_disbursement"
+  | "payment"
+  | "cashback"
+  | "purchase"
+  | "reserve";
+
+export type FinanceMovementStatus = "posted" | "pending" | "scheduled";
+
+export type FinanceApplicationStatus = "submitted" | "under_review" | "approved" | "disbursed" | "rejected";
+
+export type FinanceInsightTone = "positive" | "warning" | "critical";
+
+export interface FinanceAccount {
+  id: string;
+  userId: string;
+  kind: FinanceAccountKind;
+  label: string;
+  currency: "MXN";
+  availableBalance: number;
+  pendingBalance: number;
+  creditLimit?: number;
+  updatedAt: string;
+}
+
+export interface FinanceMovement {
+  id: string;
+  userId: string;
+  accountId: string;
+  type: FinanceMovementType;
+  status: FinanceMovementStatus;
+  title: string;
+  detail: string;
+  amount: number;
+  createdAt: string;
+}
+
+export interface FinanceApplication {
+  id: string;
+  userId: string;
+  productId: string;
+  productName: string;
+  requestedAmount: number;
+  status: FinanceApplicationStatus;
+  requestedAt: string;
+  updatedAt: string;
+  paymentPerPeriod: number;
+  termLabel: string;
+  rationale: string;
+  aiSummary: string;
+}
+
+export interface FinanceInsight {
+  id: string;
+  userId?: string;
+  title: string;
+  body: string;
+  tone: FinanceInsightTone;
+  createdAt: string;
+}
+
 export interface AppSeed {
   workspace: Workspace;
   users: User[];
@@ -296,9 +364,14 @@ export interface AppSeed {
   scheduledBroadcasts: ScheduledBroadcast[];
   scoreSnapshots: ScoreSnapshot[];
   weekly: WeeklyPoint[];
+  financeAccounts: FinanceAccount[];
+  financeMovements: FinanceMovement[];
+  financeApplications: FinanceApplication[];
+  financeInsights: FinanceInsight[];
 }
 
 export interface RuntimeSyncPayload {
+  systemMode: SystemMode;
   users: User[];
   tasks: Task[];
   checklists: ChecklistInstance[];
@@ -314,6 +387,12 @@ export interface RuntimeSyncPayload {
   reports: GeneratedReport[];
   notes: OperationalNote[];
   suggestions: OperationalSuggestion[];
+  financeAccounts: FinanceAccount[];
+  financeMovements: FinanceMovement[];
+  financeApplications: FinanceApplication[];
+  financeInsights: FinanceInsight[];
+  scoreSnapshots: ScoreSnapshot[];
+  weekly: WeeklyPoint[];
 }
 
 export interface TaskInput {

@@ -13,7 +13,7 @@ export function ModuleHeader({
 }) {
   return (
     <div className="module-header">
-      <div>
+      <div className="module-heading">
         <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
         <p className="module-copy">{description}</p>

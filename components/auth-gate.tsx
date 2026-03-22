@@ -14,6 +14,7 @@ export function AuthGate({
   const pathname = usePathname();
   const currentUser = useCurrentUser();
   const sessionUserId = useAppStore((state) => state.sessionUserId);
+  const systemMode = useAppStore((state) => state.systemMode);
   const initialize = useAppStore((state) => state.initialize);
 
   useEffect(() => {
@@ -22,7 +23,7 @@ export function AuthGate({
 
   useEffect(() => {
     if (!sessionUserId) {
-      router.replace("/login");
+      router.replace(`/login?system=${systemMode}`);
       return;
     }
 
@@ -37,7 +38,7 @@ export function AuthGate({
       const fallbackRoute = navigationByRole[currentUser.role].find((routeKey) => canAccessRoute(currentUser, routeKey)) ?? "dashboard";
       router.replace(`/${fallbackRoute}`);
     }
-  }, [currentUser, pathname, router, sessionUserId]);
+  }, [currentUser, pathname, router, sessionUserId, systemMode]);
 
   if (!sessionUserId || !currentUser) {
     return <div className="loading-screen">Cargando superficie operativa...</div>;

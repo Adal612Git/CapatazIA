@@ -1,9 +1,11 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { startTransition, useEffect, useState } from "react";
 import { BookText, FileText, LoaderCircle, MessageCircleMore, Send, Sparkles, Split } from "lucide-react";
 import { getAssistantPersonaForUserId } from "@/lib/assistant-personas";
 import { TtsPlayButton } from "@/components/tts-play-button";
+import { useAppStore } from "@/lib/store";
 import type {
   GeneratedReport,
   OperationalExtraction,
@@ -47,6 +49,7 @@ interface WhatsAppLabProps {
 }
 
 export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
+  const systemMode = useAppStore((state) => state.systemMode);
   const [selectedPhone, setSelectedPhone] = useState(contacts[0]?.phone ?? "");
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [provider, setProvider] = useState("mock");
@@ -68,9 +71,12 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
 
     async function loadThread() {
       setLoading(true);
-      const response = await fetch(`/api/capataz/chat?phone=${encodeURIComponent(selectedPhone)}`, {
+      const response = await fetch(
+        `/api/capataz/chat?phone=${encodeURIComponent(selectedPhone)}&systemMode=${encodeURIComponent(systemMode)}`,
+        {
         cache: "no-store",
-      });
+        },
+      );
       const payload = (await response.json()) as ChatPayload;
 
       if (cancelled) {
@@ -95,7 +101,7 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
     return () => {
       cancelled = true;
     };
-  }, [selectedPhone]);
+  }, [selectedPhone, systemMode]);
 
   const selectedContact = contacts.find((contact) => contact.phone === selectedPhone) ?? null;
   const assistantPersona = getAssistantPersonaForUserId(selectedContact?.userId);
@@ -114,6 +120,7 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
       body: JSON.stringify({
         phone: selectedPhone,
         text,
+        systemMode,
       }),
     });
 
@@ -230,10 +237,14 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
               <div className="stack-sm">
                 <p>{analysis.summary}</p>
                 <small>Intent: {analysis.intent}</small>
+                <small>Confianza: {analysis.confidence}</small>
                 {analysis.detectedTasks.length ? <small>Tareas: {analysis.detectedTasks.join(" | ")}</small> : null}
                 {analysis.blockers.length ? <small>Bloqueos: {analysis.blockers.join(" | ")}</small> : null}
                 {analysis.followUps.length ? <small>Seguimiento: {analysis.followUps.join(" | ")}</small> : null}
                 {analysis.requestedReport ? <small>Reporte: {analysis.requestedReport}</small> : null}
+                {analysis.needsClarification && analysis.clarifyingQuestion ? (
+                  <small>Aclaracion sugerida: {analysis.clarifyingQuestion}</small>
+                ) : null}
               </div>
             ) : (
               <p className="module-copy">Aun no hay separacion generada para este hilo.</p>
@@ -307,6 +318,10 @@ export function WhatsAppLab({ contacts }: WhatsAppLabProps) {
             "mis seguimientos",
             "contactar seguimiento psf-1",
             "cerrar seguimiento psf-1",
+            "mi saldo",
+            "mis movimientos",
+            "mis solicitudes",
+            "solicitar adelanto 2500",
             "nota cliente molesto por entrega tardia de unidad",
             "reporte general",
             "reporte bloqueos",

@@ -2,32 +2,35 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import {
   Bell,
   Building2,
   BriefcaseBusiness,
+  CreditCard,
   Gauge,
   KanbanSquare,
   LayoutDashboard,
   ListTodo,
   LogOut,
+  MessageCircleMore,
   Radar,
   RefreshCw,
+  Route,
   Settings,
   Shield,
-  Sparkles,
-  MessageCircleMore,
-  Route,
   Siren,
-  UsersRound,
+  Sparkles,
   Users,
+  UsersRound,
 } from "lucide-react";
 import { AuthGate } from "@/components/auth-gate";
+import { CapatazCopilot } from "@/components/capataz-copilot";
 import { CreateTaskDialog } from "@/components/create-task-dialog";
 import { TaskDetailSheet } from "@/components/task-detail-sheet";
-import { canAccessRoute, canCreateTasks, departmentLabel, navigationByRole } from "@/lib/permissions";
+import { getDepartmentLabel, getDomainConfig } from "@/lib/domain-config";
+import { canAccessRoute, canCreateTasks, navigationByRole } from "@/lib/permissions";
 import { useCurrentUser, useAppStore } from "@/lib/store";
 
 const navItems = [
@@ -41,6 +44,7 @@ const navItems = [
   { key: "campana", label: "Campana", href: "/campana", icon: Siren },
   { key: "multisucursal", label: "Agencias", href: "/multisucursal", icon: Building2 },
   { key: "score", label: "Score", href: "/score", icon: Gauge },
+  { key: "fintech", label: "Fintech", href: "/fintech", icon: CreditCard },
   { key: "reports", label: "Reportes", href: "/reports", icon: Radar },
   { key: "checklists", label: "Checklists", href: "/checklists", icon: Shield },
   { key: "alerts", label: "Alertas", href: "/alerts", icon: Bell },
@@ -54,58 +58,72 @@ export function DashboardShell({
   children: React.ReactNode;
 }>) {
   const pathname = usePathname();
+  const router = useRouter();
   const currentUser = useCurrentUser();
   const sessionUserId = useAppStore((state) => state.sessionUserId);
+  const systemMode = useAppStore((state) => state.systemMode);
   const workspace = useAppStore((state) => state.workspace);
   const alerts = useAppStore((state) => state.alerts);
   const tasks = useAppStore((state) => state.tasks);
   const logout = useAppStore((state) => state.logout);
+  const switchSystemMode = useAppStore((state) => state.switchSystemMode);
   const syncRuntimeFromServer = useAppStore((state) => state.syncRuntimeFromServer);
   const [syncing, setSyncing] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogSeed, setDialogSeed] = useState(0);
   const syncInFlightRef = useRef<Promise<void> | null>(null);
+  const domain = getDomainConfig(systemMode);
+  const shellThemeClass =
+    pathname === "/fintech"
+      ? "app-shell-fintech"
+      : systemMode === "hospital"
+        ? "app-shell-hospital"
+        : "app-shell-automotive";
 
-  const runSync = useEffectEvent(async () => {
+  async function runSync(showSpinner: boolean) {
     if (syncInFlightRef.current) {
       return syncInFlightRef.current;
     }
 
-    setSyncing(true);
+    if (showSpinner) {
+      setSyncing(true);
+    }
     const syncPromise = syncRuntimeFromServer().finally(() => {
       syncInFlightRef.current = null;
-      setSyncing(false);
+      if (showSpinner) {
+        setSyncing(false);
+      }
     });
 
     syncInFlightRef.current = syncPromise;
     return syncPromise;
-  });
+  }
 
   useEffect(() => {
     if (!sessionUserId) {
       return;
     }
 
-    void runSync();
+    void syncRuntimeFromServer();
     const intervalId = window.setInterval(() => {
-      void runSync();
+      void syncRuntimeFromServer();
     }, 15000);
 
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [sessionUserId]);
+  }, [sessionUserId, syncRuntimeFromServer]);
 
   return (
     <AuthGate>
-      <div className="app-shell">
+      <div className={`app-shell ${shellThemeClass}`}>
         <aside className="sidebar">
           <div className="brand-card panel">
             <div className="brand-mark-shell">
               <Image alt="Capataz.ai" className="brand-mark-image" height={58} priority src="/brand/logo.png" width={58} />
             </div>
             <div className="brand-identity">
-              <p className="eyebrow">Capataz.ai</p>
+              <p className="eyebrow">{domain.systemBadge}</p>
               <h2 className="brand-wordmark">Capataz.ai</h2>
               <p>{workspace.industry}</p>
             </div>
@@ -122,7 +140,7 @@ export function DashboardShell({
                       <Link key={item.key} className={`nav-link ${active ? "nav-link-active" : ""}`} href={item.href}>
                         <span>
                           <Icon size={18} />
-                          {item.label}
+                          {domain.navLabels[item.key] ?? item.label}
                         </span>
                         {item.key === "alerts" ? <small>{alerts.filter((alert) => !alert.read).length}</small> : null}
                       </Link>
@@ -136,29 +154,62 @@ export function DashboardShell({
             <div className="mini-stat-grid">
               <div>
                 <strong>{tasks.filter((task) => task.columnId !== "done").length}</strong>
-                <span>Abiertas</span>
+                <span>{systemMode === "hospital" ? "Pendientes" : "Abiertas"}</span>
               </div>
               <div>
                 <strong>{alerts.filter((alert) => !alert.read).length}</strong>
-                <span>Alertas</span>
+                <span>{systemMode === "hospital" ? "Riesgos" : "Alertas"}</span>
               </div>
+            </div>
+            <p className="module-copy">
+              {pathname === "/fintech"
+                ? "Score, beneficios y credito con la misma claridad operativa."
+                : "Lectura inmediata para decidir sin perseguir reportes manuales."}
+            </p>
+          </div>
+
+          <div className="sidebar-card panel stack-sm">
+            <p className="eyebrow">Vertical activa</p>
+            <div className="chip-row">
+              <button
+                className={systemMode === "automotive" ? "button-primary" : "button-secondary"}
+                type="button"
+                onClick={() => {
+                  void switchSystemMode("automotive");
+                  router.replace("/login?system=automotive");
+                }}
+              >
+                Autos
+              </button>
+              <button
+                className={systemMode === "hospital" ? "button-primary" : "button-secondary"}
+                type="button"
+                onClick={() => {
+                  void switchSystemMode("hospital");
+                  router.replace("/login?system=hospital");
+                }}
+              >
+                Hospitales
+              </button>
             </div>
           </div>
 
           <div className="sidebar-footer panel">
-            <span className="pill brand-badge">Naranja operativo</span>
-            <p>Pipeline, campana y post-venta bajo una sola identidad visual y un mismo runtime.</p>
+            <span className="pill brand-badge">
+              {pathname === "/fintech" ? "Fintech premium" : systemMode === "hospital" ? "Care theme" : "Auto theme"}
+            </span>
+            <p>{domain.heroDescription}</p>
           </div>
         </aside>
 
         <div className="content-area">
           <header className="topbar">
             <div>
-              <p className="eyebrow">Modo operativo</p>
+              <p className="eyebrow">{systemMode === "hospital" ? "Centro de comando" : "Modo operativo"}</p>
               <div className="topbar-title">
                 <h3>{currentUser?.name}</h3>
                 <span className="pill pill-muted">
-                  {currentUser?.role} · {currentUser ? departmentLabel(currentUser.department) : ""}
+                  {currentUser?.role} · {currentUser ? getDepartmentLabel(systemMode, currentUser.department) : ""}
                 </span>
               </div>
             </div>
@@ -173,16 +224,10 @@ export function DashboardShell({
                   }}
                 >
                   <Sparkles size={16} />
-                  Nueva tarea
+                  {systemMode === "hospital" ? "Nuevo pendiente" : "Nueva tarea"}
                 </button>
               ) : null}
-              <button
-                className="button-ghost"
-                type="button"
-                onClick={() => {
-                  void runSync();
-                }}
-              >
+              <button className="button-ghost" type="button" onClick={() => void runSync(true)}>
                 <RefreshCw className={syncing ? "spin" : ""} size={16} />
                 Sync
               </button>
@@ -198,6 +243,7 @@ export function DashboardShell({
 
         <TaskDetailSheet />
         <CreateTaskDialog key={dialogSeed} open={dialogOpen} onClose={() => setDialogOpen(false)} />
+        <CapatazCopilot />
       </div>
     </AuthGate>
   );

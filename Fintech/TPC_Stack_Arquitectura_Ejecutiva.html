@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TPC | Stack Tecnológico Ejecutivo + Arquitectura Sugerida</title>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Outfit',sans-serif;background:#07070a;color:#e2e8f0;height:100vh;overflow:hidden}
+    .container{display:flex;height:100vh;width:100vw}
+
+    /* GRAPH AREA */
+    .graph-container{flex-grow:1;position:relative;background:radial-gradient(ellipse at 30% 50%,#0c1020 0%,#07070a 70%);border-right:1px solid #1a1a2e}
+    #network{width:100%;height:100%;cursor:grab}
+    #network:active{cursor:grabbing}
+
+    /* Badges */
+    .env-badge{position:absolute;top:16px;padding:6px 14px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:1px;z-index:5;backdrop-filter:blur(8px);pointer-events:none}
+    .badge-cyan{left:16px;background:rgba(56,189,248,.15);border:1px solid rgba(56,189,248,.4);color:#7dd3fc}
+    .badge-violet{left:300px;background:rgba(139,92,246,.15);border:1px solid rgba(139,92,246,.4);color:#c4b5fd}
+    .badge-emerald{left:16px;top:52px;background:rgba(16,185,129,.15);border:1px solid rgba(16,185,129,.4);color:#6ee7b7}
+    .badge-amber{left:16px;top:88px;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.4);color:#fcd34d}
+
+    .level-marker{position:absolute;left:10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:3px;color:rgba(82,82,91,.6);transform:rotate(-90deg);transform-origin:left center;pointer-events:none}
+
+    /* SIDEBAR */
+    .sidebar{width:540px;min-width:540px;background:rgba(7,7,10,.97);overflow-y:auto;backdrop-filter:blur(16px);box-shadow:-10px 0 40px rgba(0,0,0,.9);display:flex;flex-direction:column;z-index:10;border-left:1px solid #1a1a2e}
+    .sidebar-inner{padding:20px 22px;display:flex;flex-direction:column;gap:16px;flex:1}
+
+    /* HEADER */
+    .header h1{font-size:26px;background:linear-gradient(135deg,#38bdf8 0%,#8b5cf6 50%,#f472b6 100%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;font-weight:900;letter-spacing:-1.5px}
+    .header .subtitle{font-size:12px;color:#71717a;font-weight:500;margin-top:2px}
+    .tech-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+    .tech-tag{padding:3px 8px;background:rgba(56,189,248,.08);border:1px solid rgba(56,189,248,.25);border-radius:4px;color:#38bdf8;font-size:10px;font-weight:700;letter-spacing:.3px}
+    .tech-tag.v{background:rgba(139,92,246,.08);border-color:rgba(139,92,246,.25);color:#c4b5fd}
+    .tech-tag.g{background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.25);color:#6ee7b7}
+    .tech-tag.a{background:rgba(245,158,11,.08);border-color:rgba(245,158,11,.25);color:#fcd34d}
+    .tech-tag.p{background:rgba(244,114,182,.08);border-color:rgba(244,114,182,.25);color:#f9a8d4}
+
+    /* TABS */
+    .tab-bar{display:flex;gap:2px;background:#111118;border-radius:8px;padding:3px;border:1px solid #1e1e2e}
+    .tab-btn{flex:1;padding:7px 4px;background:transparent;border:none;color:#71717a;border-radius:6px;cursor:pointer;font-size:11px;font-weight:700;font-family:'Outfit';transition:all .2s}
+    .tab-btn:hover{color:#a1a1aa}
+    .tab-btn.active{background:linear-gradient(135deg,rgba(56,189,248,.2),rgba(139,92,246,.2));color:#e2e8f0;box-shadow:0 2px 8px rgba(56,189,248,.15)}
+
+    .tab-content{display:none}
+    .tab-content.active{display:block}
+
+    /* CONTROLS */
+    .controls-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+    .btn{padding:7px 5px;background:rgba(30,30,46,.6);border:1px solid #2a2a3e;color:#a1a1aa;border-radius:6px;cursor:pointer;font-size:10px;font-weight:700;transition:all .2s;white-space:nowrap;font-family:'Outfit';text-align:center}
+    .btn:hover{background:rgba(56,189,248,.12);border-color:rgba(56,189,248,.5);color:#38bdf8;transform:translateY(-1px)}
+    .btn.active{background:rgba(56,189,248,.18);border-color:#38bdf8;color:#38bdf8}
+
+    /* STACK CARDS */
+    .stack-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .mini-card{padding:13px;border-radius:10px;background:#0f172a;border:1px solid #1e2d45}
+    .mini-card h3{font-size:12px;font-weight:900;color:#e2e8f0}
+    .mini-card p{margin-top:6px;font-size:11px;line-height:1.65;color:#71717a}
+    .mini-card .meta{margin-top:8px;font-size:10px;color:#6ee7b7;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+
+    /* DEPLOY / LIST */
+    .list-section{display:grid;gap:8px}
+    .list-item{padding:10px 12px;border-radius:8px;background:#0f172a;border:1px solid #1e2d45}
+    .list-item .tag{display:block;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.14em;color:#38bdf8;margin-bottom:4px}
+    .list-item p{font-size:11px;color:#a1a1aa;line-height:1.6}
+
+    /* SECURITY / ROADMAP CARDS */
+    .sec-grid{display:grid;gap:8px}
+    .sec-card{padding:13px;border-radius:10px;background:#0f172a;border:1px solid #1e2d45}
+    .sec-card h3{font-size:12px;font-weight:900;color:#e2e8f0}
+    .sec-card p{margin-top:6px;font-size:11px;line-height:1.65;color:#71717a}
+
+    /* SEARCH */
+    .search-box{position:relative}
+    .search-box input{width:100%;background:#111118;border:1px solid #2a2a3e;padding:10px 14px 10px 36px;border-radius:8px;color:white;font-family:'Outfit';font-size:12px;outline:none;transition:border-color .2s}
+    .search-box input:focus{border-color:#8b5cf6;box-shadow:0 0 12px rgba(139,92,246,.15)}
+    .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#52525b;font-size:13px;pointer-events:none}
+
+    /* DETAILS */
+    .details-card{background:#111118;border-radius:10px;border:1px solid #2a2a3e;padding:18px;display:none;animation:fadeIn .3s ease;max-height:55vh;overflow-y:auto}
+    .node-badge{font-size:9px;font-weight:800;padding:3px 8px;border-radius:4px;letter-spacing:.8px;text-transform:uppercase}
+    .details-title{font-size:17px;font-weight:800;color:white;margin:10px 0 4px}
+    .section-title{font-size:10px;text-transform:uppercase;color:#52525b;font-weight:800;margin:14px 0 6px;letter-spacing:1.5px}
+    .code-block{font-family:'JetBrains Mono',monospace;font-size:10.5px;background:#0a0a0f;padding:10px;border-radius:6px;border:1px solid #1e1e2e;color:#a1a1aa;display:flex;flex-direction:column;gap:5px;max-height:180px;overflow-y:auto}
+    .method-line{border-left:2px solid #8b5cf6;padding-left:8px}
+    .chip-row{display:flex;flex-wrap:wrap;gap:4px}
+    .chip{padding:3px 7px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);color:#d8e2f3}
+
+    /* STATUS */
+    .status-bar{background:#111118;border-radius:8px;padding:12px;border:1px solid #1e1e2e}
+    .progress{height:5px;background:#1e1e2e;border-radius:3px;margin:8px 0 4px;overflow:hidden}
+    .progress-fill{height:100%;background:linear-gradient(90deg,#38bdf8,#8b5cf6,#f472b6);border-radius:3px}
+
+    /* LEGEND */
+    .legend{display:grid;grid-template-columns:repeat(2,1fr);gap:6px}
+    .legend-item{display:flex;align-items:center;gap:6px;font-size:10px;color:#71717a;font-weight:500}
+    .dot{width:8px;height:8px;border-radius:50%}
+
+    @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+    ::-webkit-scrollbar{width:5px}
+    ::-webkit-scrollbar-track{background:#07070a}
+    ::-webkit-scrollbar-thumb{background:#2a2a3e;border-radius:3px}
+    ::-webkit-scrollbar-thumb:hover{background:#3f3f46}
+
+    @media(max-width:1180px){
+      body{overflow:auto}
+      .container{flex-direction:column;height:auto}
+      .graph-container{height:60vh;min-height:480px;border-right:none;border-bottom:1px solid #1a1a2e}
+      .sidebar{width:100%;min-width:unset}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="graph-container">
+      <div id="network"></div>
+      <div class="env-badge badge-cyan">Fase 1 · Wallet + Mr. Shark + Capataz + WhatsApp</div>
+      <div class="env-badge badge-violet">Arquitectura provider-agnostic</div>
+      <div class="env-badge badge-emerald">Diseño para escalar a broker real</div>
+      <div class="env-badge badge-amber">Health premium sale de fase 1</div>
+      <div class="level-marker" style="top:8%">Experience</div>
+      <div class="level-marker" style="top:22%">Intelligence</div>
+      <div class="level-marker" style="top:38%">Orchestration</div>
+      <div class="level-marker" style="top:54%">Domain Services</div>
+      <div class="level-marker" style="top:70%">Integrations + Data</div>
+      <div class="level-marker" style="top:87%">Infra + Ops</div>
+    </div>
+
+    <div class="sidebar">
+      <div class="sidebar-inner">
+
+        <div class="header">
+          <h1>TPC · Stack Tecnológico Ejecutivo</h1>
+          <div class="subtitle">Criterio de arquitectura · separación de dominios · canales, IA, servicios core e integraciones</div>
+          <div class="tech-tags">
+            <span class="tech-tag">React 18 + Vite</span>
+            <span class="tech-tag">Expo / React Native</span>
+            <span class="tech-tag v">NestJS + TypeScript</span>
+            <span class="tech-tag v">Orquestación por dominio</span>
+            <span class="tech-tag g">PostgreSQL + Redis + S3</span>
+            <span class="tech-tag g">Audit trail end-to-end</span>
+            <span class="tech-tag p">WhatsApp Business API</span>
+            <span class="tech-tag p">tastytrade sandbox</span>
+            <span class="tech-tag a">STP / SPEI</span>
+            <span class="tech-tag a">Apex futuro enterprise</span>
+          </div>
+        </div>
+
+        <!-- TABS -->
+        <div class="tab-bar">
+          <button class="tab-btn active" onclick="switchTab('stack', this)">Stack</button>
+          <button class="tab-btn" onclick="switchTab('mapa', this)">Mapa</button>
+          <button class="tab-btn" onclick="switchTab('deploy', this)">Deploy</button>
+          <button class="tab-btn" onclick="switchTab('security', this)">Riesgo</button>
+          <button class="tab-btn" onclick="switchTab('roadmap', this)">Roadmap</button>
+        </div>
+
+        <!-- TAB: STACK -->
+        <div id="tab-stack" class="tab-content active">
+          <div class="stack-grid">
+            <div class="mini-card">
+              <h3>Experience Layer</h3>
+              <p>Web ejecutiva para dueño y admin operativo para staff. Mobile app para experiencia premium. WhatsApp como canal principal del usuario VIP.</p>
+              <div class="meta">React + Expo + canal conversacional</div>
+            </div>
+            <div class="mini-card">
+              <h3>Intelligence Layer</h3>
+              <p>Mr. Shark interpreta intención patrimonial. Capataz AI convierte intención en tarea, workflow, recordatorio o aprobación.</p>
+              <div class="meta">LLM gateway + memoria + clasificación</div>
+            </div>
+            <div class="mini-card">
+              <h3>Orchestration Layer</h3>
+              <p>Motor de políticas, thresholds, approvals, escalamiento humano y handoff. Aquí vive el control fino del riesgo.</p>
+              <div class="meta">Policy engine + workflow runtime</div>
+            </div>
+            <div class="mini-card">
+              <h3>Domain Services</h3>
+              <p>Wallet, portfolio, approvals, operations, notifications, audit y canales desacoplados con contratos internos estables.</p>
+              <div class="meta">NestJS modular + eventos internos</div>
+            </div>
+            <div class="mini-card">
+              <h3>Integration Layer</h3>
+              <p>Adaptadores por proveedor para STP/SPEI, tastytrade, Apex futuro, WhatsApp y pasarelas. Cambio de proveedor sin reescribir negocio.</p>
+              <div class="meta">Adapters + provider abstraction</div>
+            </div>
+            <div class="mini-card">
+              <h3>Data + Audit</h3>
+              <p>Ledger, perfiles, eventos, decisiones, memoria de conversación, attachments y evidencia regulatoria. Nada crítico queda fuera del trail.</p>
+              <div class="meta">PostgreSQL + Redis + object storage</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: MAPA -->
+        <div id="tab-mapa" class="tab-content">
+          <div class="controls-grid">
+            <button class="btn active" onclick="setLayout('hierarchical', this)">📐 Jerárquica</button>
+            <button class="btn" onclick="setLayout('force', this)">🧭 Libre</button>
+            <button class="btn" onclick="showFlow('global', this)">🌐 Global</button>
+            <button class="btn" onclick="showFlow('onboarding', this)">🚀 Onboarding</button>
+            <button class="btn" onclick="showFlow('wallet', this)">💼 Wallet</button>
+            <button class="btn" onclick="showFlow('whatsapp', this)">💬 WhatsApp</button>
+            <button class="btn" onclick="showFlow('portfolio', this)">📈 Portafolio</button>
+            <button class="btn" onclick="showFlow('approvals', this)">✅ Approvals</button>
+            <button class="btn" onclick="showFlow('dashboard', this)">📊 Dashboard</button>
+            <button class="btn" onclick="showFlow('payments', this)">🏦 Money Rails</button>
+            <button class="btn" onclick="showFlow('ops', this)">⚙️ Capataz</button>
+            <button class="btn" onclick="resetView()">✕ Reset</button>
+          </div>
+        </div>
+
+        <!-- TAB: DEPLOY -->
+        <div id="tab-deploy" class="tab-content">
+          <div class="list-section">
+            <div class="list-item"><span class="tag">MVP Now</span><p>Cloudflare/Nginx + frontend React en Vercel o contenedor Nginx; API NestJS en contenedor; PostgreSQL administrado; Redis para sesiones, rate limits y colas ligeras; S3/MinIO para archivos y evidencia.</p></div>
+            <div class="list-item"><span class="tag">Entorno IA</span><p>Gateway propio para modelos, con proveedor configurable. Así Mr. Shark y Capataz no quedan amarrados a un solo LLM.</p></div>
+            <div class="list-item"><span class="tag">Webhook Hub</span><p>Entrada centralizada para WhatsApp, brokers y pagos. Firma, validación, idempotencia y auditoría primero; procesamiento después.</p></div>
+            <div class="list-item"><span class="tag">Observabilidad</span><p>Logs estructurados, métricas, trazas, alertas y tablero de eventos críticos. Cada comando sensible debe poder reconstruirse sin adivinanzas.</p></div>
+            <div class="list-item"><span class="tag">Escalamiento</span><p>Cuando el piloto crezca: separar workers, event bus, multi-env estricto y vault de secretos. El core de dominio no cambia; solo madura la infraestructura.</p></div>
+          </div>
+        </div>
+
+        <!-- TAB: SECURITY -->
+        <div id="tab-security" class="tab-content">
+          <div class="sec-grid">
+            <div class="sec-card">
+              <h3>Narrativa regulatoria correcta</h3>
+              <p>No venderlo como banco. No prometer rendimiento sobre saldo wallet. No presentar ejecución discrecional automática sin sponsor/licencia cerrada.</p>
+            </div>
+            <div class="sec-card">
+              <h3>Control por umbrales</h3>
+              <p>Transferencias, órdenes y aprobaciones sensibles con thresholds configurables, doble confirmación y opción de handoff humano.</p>
+            </div>
+            <div class="sec-card">
+              <h3>Audit trail end-to-end</h3>
+              <p>Quién pidió, quién aprobó, cuándo, desde qué canal, con qué contexto y contra qué adaptador externo se ejecutó.</p>
+            </div>
+            <div class="sec-card">
+              <h3>Provider-agnostic real</h3>
+              <p>Dominio desacoplado de proveedores. La interfaz conversa con Mr. Shark; los adaptadores hablan con tastytrade, Apex, STP o pasarelas.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: ROADMAP -->
+        <div id="tab-roadmap" class="tab-content">
+          <div class="list-section">
+            <div class="list-item"><span class="tag">48-72 h</span><p>Backbone técnico, mocks, webhook hub, comandos base de Mr. Shark y tablero visual de 6 flujos.</p></div>
+            <div class="list-item"><span class="tag">Semana 1</span><p>Wallet MVP, approvals, WhatsApp command center, Capataz funcional, portafolio básico, dashboard ejecutivo.</p></div>
+            <div class="list-item"><span class="tag">Semana 2</span><p>Adaptadores reales de inversión sandbox, money movement mejor trazado, políticas refinadas y demo premium consistente.</p></div>
+            <div class="list-item"><span class="tag">Fase 2</span><p>Broker/custodio enterprise, tarjetas, treasury más profundo, reglas patrimoniales y más automatización controlada.</p></div>
+            <div class="list-item"><span class="tag">Fase 3</span><p>Health premium y datos clínicos conectados como capa adjunta, no como lastre del núcleo financiero-operativo.</p></div>
+          </div>
+        </div>
+
+        <!-- SEARCH -->
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="search" placeholder="Buscar capa, servicio, integración o flujo..." onkeyup="filterNodes()">
+        </div>
+
+        <!-- DETAILS -->
+        <div id="detailsPanel" class="details-card">
+          <div style="text-align:center;color:#52525b;padding:20px;font-size:12px">
+            Selecciona un componente en el grafo para ver sus detalles
+          </div>
+        </div>
+
+        <!-- STATUS -->
+        <div class="status-bar">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span style="color:#38bdf8;font-weight:700;font-size:11px">LECTURA EJECUTIVA</span>
+            <span style="color:#52525b;font-size:10px">TPC v3.0</span>
+          </div>
+          <div style="font-size:11px;color:#71717a;line-height:1.7">
+            La clave es una columna vertebral limpia: canal conversacional, agentes especializados, motor de políticas, servicios de dominio y adaptadores regulados.
+          </div>
+          <div class="progress"><div class="progress-fill" style="width:68%"></div></div>
+          <div style="font-size:10px;color:#52525b">
+            Arranque: <span style="color:#fcd34d">WhatsApp + Wallet + Approvals + Portafolio básico + Dashboard</span> · Health premium fuera del MVP
+          </div>
+        </div>
+
+        <!-- LEGEND -->
+        <div class="legend">
+          <div class="legend-item"><div class="dot" style="background:#0ea5e9"></div>Experience</div>
+          <div class="legend-item"><div class="dot" style="background:#8b5cf6"></div>Intelligence</div>
+          <div class="legend-item"><div class="dot" style="background:#f59e0b"></div>Orchestration</div>
+          <div class="legend-item"><div class="dot" style="background:#10b981"></div>Domain / Data</div>
+          <div class="legend-item"><div class="dot" style="background:#ef4444"></div>Infra / Security</div>
+          <div class="legend-item"><div class="dot" style="background:#f472b6"></div>Integraciones externas</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── TAB SWITCHING (definido primero, antes de todo) ──
+    window.switchTab = function(name, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + name).classList.add('active');
+    };
+
+    // ── PALETA ──
+    const C = {
+      experience:   { bg:'#082f49', border:'#0ea5e9', highlight:'#38bdf8' },
+      intelligence: { bg:'#2e1065', border:'#8b5cf6', highlight:'#a78bfa' },
+      orchestration:{ bg:'#78350f', border:'#f59e0b', highlight:'#fbbf24' },
+      domain:       { bg:'#064e3b', border:'#10b981', highlight:'#34d399' },
+      infra:        { bg:'#7f1d1d', border:'#ef4444', highlight:'#f87171' },
+      external:     { bg:'#831843', border:'#f472b6', highlight:'#f9a8d4' }
+    };
+
+    // ── NODOS ──
+    const nodesData = [
+      // Experience
+      { id:'ExecutiveApp', group:'experience', level:0, label:'Executive App\nReact 18 + Vite',
+        desc:'Consola premium para dueño y usuario VIP. Muestra liquidez, portafolio, approvals, actividad y riesgo sin ruido.',
+        stack:['React 18','Vite','TypeScript','TanStack Query','Tailwind'],
+        responsibilities:['Dashboard ejecutivo','Wallet summary','Portafolio visual','Approvals center']
+      },
+      { id:'AdminConsole', group:'experience', level:0, label:'Admin Console\nOps + Backoffice',
+        desc:'Panel para staff, compliance, operación, conciliación y seguimiento.',
+        stack:['React 18','RBAC','Operational dashboards'],
+        responsibilities:['Gestión de usuarios','Revisión de eventos','Conciliación','Políticas']
+      },
+      { id:'MobileVIP', group:'experience', level:0, label:'Mobile VIP\nExpo / React Native',
+        desc:'Versión móvil del control premium. Sobria, rápida y útil.',
+        stack:['Expo','React Native','Deep links','Push notifications'],
+        responsibilities:['Consulta rápida','Aprobaciones','Alertas']
+      },
+      { id:'WhatsAppChannel', group:'experience', level:0, label:'WhatsApp Channel\nPrimary VIP Interface',
+        desc:'Canal primario del usuario VIP. Aquí entra la intención humana en lenguaje natural.',
+        stack:['WhatsApp Business Cloud API','Webhook receiver','Template messaging'],
+        responsibilities:['Entrada conversacional','Notificaciones de estado','Aprobaciones por mensaje']
+      },
+      // Intelligence
+      { id:'MrShark', group:'intelligence', level:1, label:'Mr. Shark\nPrivate Banker AI',
+        desc:'Agente enfocado en liquidez, portafolio, instrucciones patrimoniales y contexto financiero.',
+        stack:['LLM gateway','Context builder','Intent parser','Policy aware prompting'],
+        responsibilities:['Interpretar instrucciones financieras','Consultar contexto patrimonial','Disparar servicios de dominio']
+      },
+      { id:'CapatazAI', group:'intelligence', level:1, label:'Capataz AI\nExecution Engine',
+        desc:'Motor operativo para tareas, reminders, asignaciones, status y seguimiento.',
+        stack:['Intent routing','Workflow planner','Task orchestration'],
+        responsibilities:['Convertir órdenes en acciones','Asignar responsables','Cerrar ciclo operativo']
+      },
+      { id:'AIGateway', group:'intelligence', level:1, label:'AI Gateway\nProvider abstraction',
+        desc:'Capa que abstrae al proveedor LLM. Blindaje estratégico para no quedar tatuado a un modelo.',
+        stack:['OpenAI/Anthropic/otros','Prompt templates','Routing rules','PII redaction'],
+        responsibilities:['Seleccionar modelo','Versionar prompts','Gestionar fallback','Controlar costos']
+      },
+      { id:'MemoryContext', group:'intelligence', level:1, label:'Context + Memory',
+        desc:'Perfil de riesgo, preferencias, historial, contexto conversacional y configuración por cliente.',
+        stack:['PostgreSQL','Redis cache','Conversation snapshots'],
+        responsibilities:['Recuperar contexto útil','Reducir alucinación operativa','Dar continuidad a Mr. Shark']
+      },
+      // Orchestration
+      { id:'PolicyEngine', group:'orchestration', level:2, label:'Policy Engine\nThresholds + Rules',
+        desc:'Lugar donde se decide si algo puede ejecutarse, escalar, pedir aprobación o bloquearse.',
+        stack:['Rules service','Threshold configs','ABAC/RBAC fusion'],
+        responsibilities:['Umbrales','Bloqueos','Confirmaciones','Escalamiento']
+      },
+      { id:'WorkflowOrchestrator', group:'orchestration', level:2, label:'Workflow Orchestrator',
+        desc:'Secuencia acciones entre agentes, servicios y adaptadores.',
+        stack:['NestJS workflow module','Outbox pattern','Job workers'],
+        responsibilities:['Enrutar comandos','Ordenar pasos','Persistir eventos','Garantizar idempotencia']
+      },
+      { id:'ApprovalEngine', group:'orchestration', level:2, label:'Approval Engine',
+        desc:'Centro de confirmaciones, revisiones, estados y quién autorizó qué.',
+        stack:['Approval policies','State machine','Audit hooks'],
+        responsibilities:['Crear instrucciones','Solicitar confirmación','Aprobar o rechazar','Disparar ejecución']
+      },
+      { id:'WebhookHub', group:'orchestration', level:2, label:'Webhook Hub',
+        desc:'Punto único de entrada para eventos externos. Firma, valida, deduplica y enruta.',
+        stack:['NestJS controllers','Signature validation','Idempotency keys'],
+        responsibilities:['Entrada segura','Normalización de payloads','Trazabilidad','Encolado']
+      },
+      // Domain Services
+      { id:'IdentityDomain', group:'domain', level:3, label:'Identity & Roles',
+        desc:'Autenticación, usuarios, organizaciones, staff, permisos y sesión.',
+        stack:['NestJS Auth','JWT/refresh','RBAC'],
+        api:['/auth','/users','/roles','/organizations','/permissions']
+      },
+      { id:'WalletDomain', group:'domain', level:3, label:'Wallet Core',
+        desc:'Cuentas, balances, movimientos, beneficiarios, transferencias y ledger operativo.',
+        stack:['NestJS modules','Ledger tables','Transactional writes'],
+        api:['/wallet/accounts','/wallet/balances','/wallet/movements','/wallet/transfers']
+      },
+      { id:'PortfolioDomain', group:'domain', level:3, label:'Portfolio / Investments',
+        desc:'Resumen, posiciones, perfil de riesgo, simulaciones e intenciones de orden.',
+        stack:['Broker adapter layer','Risk profile store','Performance aggregation'],
+        api:['/portfolio/summary','/portfolio/positions','/risk-profile','/simulations','/orders/intents']
+      },
+      { id:'PaymentsDomain', group:'domain', level:3, label:'Payments / Checkout',
+        desc:'Links de pago, checkout, suscripciones y conciliación de cobros.',
+        stack:['Payment adapter layer','Webhook processing'],
+        api:['/payment-links','/checkout','/subscriptions','/webhooks/payments']
+      },
+      { id:'SharkDomain', group:'domain', level:3, label:'Mr. Shark API',
+        desc:'Comandos, chat, contexto, memoria y canal WhatsApp del banquero privado IA.',
+        stack:['Conversation APIs','Command parsing','Context retrieval'],
+        api:['/shark/chat','/shark/whatsapp','/shark/commands','/shark/context']
+      },
+      { id:'CapatazDomain', group:'domain', level:3, label:'Capataz / Operations',
+        desc:'Tasks, assignments, reminders, events, reporting y workflows multiusuario.',
+        stack:['Task engine','Workflow service','Notifications'],
+        api:['/capataz/workflows','/capataz/assignments','/tasks','/reminders','/events']
+      },
+      { id:'AuditDomain', group:'domain', level:3, label:'Audit & Event Trail',
+        desc:'Registro de money movements, approvals, decisiones del sistema y evidencias.',
+        stack:['Audit tables','Event log','Immutable style writes'],
+        api:['/audit/events','/audit/approvals','/audit/money-movements']
+      },
+      { id:'NotificationDomain', group:'domain', level:3, label:'Notifications',
+        desc:'Push, email, WhatsApp templates y recordatorios derivados de eventos y workflows.',
+        stack:['Notification service','Template registry','Queue'],
+        responsibilities:['Notificar','Confirmar estado','Escalar recordatorios']
+      },
+      // Integrations + Data
+      { id:'WhatsAppAPI', group:'external', level:4, label:'WhatsApp Business\nCloud API',
+        desc:'Canal de mensajes, plantillas, media y webhooks. Canal primario para segmento VIP.'
+      },
+      { id:'STP', group:'external', level:4, label:'STP / SPEI\nMoney Rails MX',
+        desc:'Carril principal para depósitos, retiros y transferencias en pesos. Pieza crítica del wallet mexicano.'
+      },
+      { id:'Tastytrade', group:'external', level:4, label:'tastytrade\nSandbox / Demo Broker',
+        desc:'Conector útil para demo técnica rápida y validación de integración de inversión.'
+      },
+      { id:'Apex', group:'external', level:4, label:'Apex Fintech\nFuture Enterprise Rail',
+        desc:'Infraestructura de wealth a escala premium. Entra en fase enterprise, no en MVP.'
+      },
+      { id:'PaymentGateway', group:'external', level:4, label:'Payment Gateway\nStripe / MP / OpenPay',
+        desc:'Pasarelas para cobros y experiencias de pago auxiliares. Cobro, no columna de wallet.'
+      },
+      { id:'HumanOps', group:'external', level:4, label:'Human Ops\nCompliance',
+        desc:'Capa humana para excepciones, escalamiento, revisión de riesgo y operaciones sensibles.'
+      },
+      { id:'PostgreSQL', group:'domain', level:4, label:'PostgreSQL\nCore Data',
+        desc:'Fuente principal de verdad para wallet, usuarios, portafolio, approvals y eventos.'
+      },
+      { id:'Redis', group:'domain', level:4, label:'Redis\nCache + Queue',
+        desc:'Cache de contexto, sesiones, locks ligeros, idempotencia y apoyo a workers.'
+      },
+      { id:'ObjectStorage', group:'domain', level:4, label:'Object Storage\nS3 / MinIO',
+        desc:'Almacenamiento para attachments, exports y evidencia documental.'
+      },
+      // Infra
+      { id:'APIGateway', group:'infra', level:5, label:'API Gateway / Edge',
+        desc:'Entrada única para frontends y proveedores. Cloudflare, Nginx o gateway administrado.',
+        stack:['Cloudflare','Nginx','Rate limits','WAF']
+      },
+      { id:'Workers', group:'infra', level:5, label:'Async Workers',
+        desc:'Procesamiento de colas, reintentos, webhooks y tareas pesadas.',
+        stack:['NestJS workers','BullMQ opcional','Outbox']
+      },
+      { id:'Observability', group:'infra', level:5, label:'Observability',
+        desc:'Logs, métricas, trazas y alertas. La sala de espejos donde el sistema se ve a sí mismo.',
+        stack:['Structured logs','Metrics','Tracing','Alerting']
+      },
+      { id:'SecretsVault', group:'infra', level:5, label:'Secrets + Config Vault',
+        desc:'Gestión segura de secretos, llaves, tokens y configuración sensible.',
+        stack:['Vault / cloud secrets','Rotation policies']
+      }
+    ];
+
+    // ── EDGES ──
+    const edgesData = [
+      {from:'ExecutiveApp',to:'APIGateway'},{from:'AdminConsole',to:'APIGateway'},
+      {from:'MobileVIP',to:'APIGateway'},{from:'WhatsAppChannel',to:'WebhookHub'},
+      {from:'APIGateway',to:'IdentityDomain'},{from:'APIGateway',to:'WalletDomain'},
+      {from:'APIGateway',to:'PortfolioDomain'},{from:'APIGateway',to:'PaymentsDomain'},
+      {from:'APIGateway',to:'SharkDomain'},{from:'APIGateway',to:'CapatazDomain'},
+      {from:'APIGateway',to:'AuditDomain'},{from:'APIGateway',to:'NotificationDomain'},
+      {from:'WhatsAppChannel',to:'MrShark',label:'mensaje'},{from:'ExecutiveApp',to:'MrShark',label:'chat'},
+      {from:'MobileVIP',to:'MrShark',label:'consulta'},{from:'MrShark',to:'AIGateway',label:'nlp'},
+      {from:'CapatazAI',to:'AIGateway',label:'routing'},{from:'MrShark',to:'MemoryContext',label:'contexto'},
+      {from:'CapatazAI',to:'MemoryContext',label:'historial'},{from:'MrShark',to:'PolicyEngine',label:'valida'},
+      {from:'CapatazAI',to:'PolicyEngine',label:'valida'},{from:'MrShark',to:'WorkflowOrchestrator',label:'orquesta'},
+      {from:'CapatazAI',to:'WorkflowOrchestrator',label:'ejecuta'},{from:'WebhookHub',to:'WorkflowOrchestrator',label:'enruta'},
+      {from:'PolicyEngine',to:'ApprovalEngine',label:'requiere'},{from:'WorkflowOrchestrator',to:'ApprovalEngine',label:'crea'},
+      {from:'WorkflowOrchestrator',to:'IdentityDomain'},{from:'WorkflowOrchestrator',to:'WalletDomain'},
+      {from:'WorkflowOrchestrator',to:'PortfolioDomain'},{from:'WorkflowOrchestrator',to:'PaymentsDomain'},
+      {from:'WorkflowOrchestrator',to:'SharkDomain'},{from:'WorkflowOrchestrator',to:'CapatazDomain'},
+      {from:'WorkflowOrchestrator',to:'AuditDomain'},{from:'WorkflowOrchestrator',to:'NotificationDomain'},
+      {from:'ApprovalEngine',to:'AuditDomain',label:'trail'},{from:'ApprovalEngine',to:'HumanOps',label:'escalate',dashes:true},
+      {from:'SharkDomain',to:'MrShark'},{from:'CapatazDomain',to:'CapatazAI'},
+      {from:'WalletDomain',to:'STP',label:'money rails'},{from:'PortfolioDomain',to:'Tastytrade',label:'sandbox'},
+      {from:'PortfolioDomain',to:'Apex',label:'future',dashes:true},{from:'PaymentsDomain',to:'PaymentGateway',label:'checkout'},
+      {from:'NotificationDomain',to:'WhatsAppAPI',label:'templates'},{from:'WebhookHub',to:'WhatsAppAPI',label:'webhooks'},
+      {from:'WorkflowOrchestrator',to:'Workers',label:'jobs'},{from:'Workers',to:'WebhookHub',label:'retries',dashes:true},
+      {from:'IdentityDomain',to:'PostgreSQL'},{from:'WalletDomain',to:'PostgreSQL'},
+      {from:'PortfolioDomain',to:'PostgreSQL'},{from:'PaymentsDomain',to:'PostgreSQL'},
+      {from:'SharkDomain',to:'PostgreSQL'},{from:'CapatazDomain',to:'PostgreSQL'},
+      {from:'AuditDomain',to:'PostgreSQL'},{from:'NotificationDomain',to:'PostgreSQL'},
+      {from:'MemoryContext',to:'PostgreSQL'},{from:'MemoryContext',to:'Redis',label:'cache'},
+      {from:'WebhookHub',to:'Redis',label:'idempotencia'},{from:'Workers',to:'Redis',label:'queue'},
+      {from:'AuditDomain',to:'ObjectStorage',label:'evidence'},{from:'NotificationDomain',to:'ObjectStorage',label:'exports',dashes:true},
+      {from:'APIGateway',to:'Observability',label:'logs',dashes:true},{from:'Workers',to:'Observability',label:'metrics',dashes:true},
+      {from:'APIGateway',to:'SecretsVault',label:'keys',dashes:true},
+      {from:'PortfolioDomain',to:'SecretsVault',label:'creds',dashes:true},
+      {from:'WalletDomain',to:'SecretsVault',label:'creds',dashes:true}
+    ];
+
+    // ── FLOW SETS ──
+    const flowSets = {
+      global:['ExecutiveApp','AdminConsole','MobileVIP','WhatsAppChannel','MrShark','CapatazAI','AIGateway','MemoryContext','PolicyEngine','WorkflowOrchestrator','ApprovalEngine','WebhookHub','IdentityDomain','WalletDomain','PortfolioDomain','PaymentsDomain','SharkDomain','CapatazDomain','AuditDomain','NotificationDomain','STP','Tastytrade','Apex','PaymentGateway','WhatsAppAPI','HumanOps','PostgreSQL','Redis','ObjectStorage','APIGateway','Workers','Observability','SecretsVault'],
+      onboarding:['ExecutiveApp','MobileVIP','IdentityDomain','PolicyEngine','WorkflowOrchestrator','AuditDomain','PostgreSQL','APIGateway'],
+      wallet:['ExecutiveApp','MobileVIP','WhatsAppChannel','MrShark','PolicyEngine','WorkflowOrchestrator','WalletDomain','ApprovalEngine','STP','PostgreSQL','AuditDomain','Redis'],
+      whatsapp:['WhatsAppChannel','WebhookHub','MrShark','CapatazAI','AIGateway','MemoryContext','WorkflowOrchestrator','SharkDomain','CapatazDomain','NotificationDomain','WhatsAppAPI','AuditDomain','PostgreSQL'],
+      portfolio:['ExecutiveApp','MobileVIP','MrShark','PolicyEngine','WorkflowOrchestrator','PortfolioDomain','Tastytrade','Apex','PostgreSQL','AuditDomain'],
+      approvals:['ExecutiveApp','MobileVIP','WhatsAppChannel','MrShark','PolicyEngine','ApprovalEngine','WorkflowOrchestrator','AuditDomain','HumanOps','PostgreSQL'],
+      dashboard:['ExecutiveApp','WalletDomain','PortfolioDomain','CapatazDomain','ApprovalEngine','AuditDomain','NotificationDomain','PostgreSQL'],
+      payments:['WalletDomain','PaymentsDomain','STP','PaymentGateway','WebhookHub','PostgreSQL','Redis','SecretsVault'],
+      ops:['CapatazAI','WorkflowOrchestrator','CapatazDomain','NotificationDomain','ApprovalEngine','HumanOps','AuditDomain','Workers','PostgreSQL']
+    };
+
+    // ── VIS.JS INIT ──
+    const container = document.getElementById('network');
+
+    const visNodes = new vis.DataSet(nodesData.map(n => ({
+      id: n.id, label: n.label, title: n.desc, level: n.level, group: n.group,
+      shape: 'box', borderWidth: 2,
+      margin: n.level === 0 ? 12 : 8,
+      font: { color:'#fff', face:'Outfit', size: n.level===0?13:n.level===3?10:11, bold:n.level<=2 },
+      color: {
+        background: C[n.group].bg, border: C[n.group].border,
+        highlight: { border: C[n.group].highlight, background: C[n.group].bg }
+      },
+      shadow: { enabled:true, color: C[n.group].border+'30', size:12 },
+      widthConstraint: { maximum: 200 }
+    })));
+
+    const visEdges = new vis.DataSet(edgesData.map((e,i) => ({
+      id:'e'+i, from:e.from, to:e.to, label:e.label||'',
+      arrows:'to', dashes:!!e.dashes,
+      color: { color: e.dashes?'#8b5cf640':'#3f3f4660', opacity:0.6 },
+      font: { align:'middle', size:8, color:'#71717a', background:'#07070a' },
+      smooth: { type:'cubicBezier', forceDirection:'vertical', roundness:0.45 }
+    })));
+
+    const options = {
+      layout: {
+        hierarchical: {
+          enabled:true, direction:'UD', sortMethod:'directed',
+          levelSeparation:160, nodeSpacing:220, treeSpacing:260,
+          blockShifting:true, edgeMinimization:true, parentCentralization:true
+        }
+      },
+      physics: {
+        enabled:true,
+        hierarchicalRepulsion: { nodeDistance:220, centralGravity:0.3, springLength:180, springConstant:0.02, damping:0.1 },
+        solver:'hierarchicalRepulsion'
+      },
+      interaction: { hover:true, tooltipDelay:200, navigationButtons:true, keyboard:true },
+      nodes: { shape:'box', margin:10 },
+      edges: { smooth:{ type:'cubicBezier', forceDirection:'vertical', roundness:0.45 } }
+    };
+
+    const network = new vis.Network(container, { nodes:visNodes, edges:visEdges }, options);
+
+    // ── EVENTS ──
+    network.on('click', function(params) {
+      if(params.nodes.length > 0) {
+        showNodeDetails(params.nodes[0]);
+        highlightFlow(params.nodes[0]);
+      } else {
+        document.getElementById('detailsPanel').style.display = 'none';
+        resetView(false);
+      }
+    });
+
+    // ── NODE DETAILS ──
+    window.showNodeDetails = function(nodeId) {
+      const node = nodesData.find(n => n.id === nodeId);
+      if(!node) return;
+      const panel = document.getElementById('detailsPanel');
+      const color = C[node.group].border;
+      const groupNames = { experience:'Experience', intelligence:'Intelligence', orchestration:'Orchestration', domain:'Domain / Data', infra:'Infra / Security', external:'Integración externa' };
+
+      let html = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span class="node-badge" style="background:${color}20;color:${color};border:1px solid ${color}40">${groupNames[node.group]}</span>
+          <span style="font-size:9px;color:#52525b">Level ${node.level}</span>
+        </div>
+        <h2 class="details-title">${node.label.replace(/\n/g,' · ')}</h2>
+      `;
+      if(node.desc) html += `<div style="font-size:11px;color:#a1a1aa;margin-bottom:12px;line-height:1.65;background:rgba(255,255,255,.02);padding:10px;border-radius:6px;border:1px solid #1e1e2e">${node.desc}</div>`;
+      if(node.stack?.length) {
+        html += `<div class="section-title">Stack sugerido</div><div class="chip-row">${node.stack.map(s=>`<span class="chip">${s}</span>`).join('')}</div>`;
+      }
+      if(node.api?.length) {
+        html += `<div class="section-title">Contratos / APIs</div><div class="code-block">${node.api.map(v=>`<div class="method-line" style="border-color:#38bdf8"><span style="color:#f9a8d4">route</span> <span style="color:#a78bfa">${v}</span></div>`).join('')}</div>`;
+      }
+      if(node.responsibilities?.length) {
+        html += `<div class="section-title">Responsabilidades</div><div class="chip-row">${node.responsibilities.map(r=>`<span class="chip">${r}</span>`).join('')}</div>`;
+      }
+      const connected = [];
+      edgesData.forEach(e => {
+        if(e.from===nodeId) connected.push(`→ ${e.to}${e.label?' · '+e.label:''}`);
+        if(e.to===nodeId) connected.push(`← ${e.from}${e.label?' · '+e.label:''}`);
+      });
+      if(connected.length) {
+        html += `<div class="section-title">Conexiones (${connected.length})</div><div class="code-block">${connected.map(c=>`<div class="field-line" style="border-color:#10b981;color:#6ee7b7">${c}</div>`).join('')}</div>`;
+      }
+      panel.innerHTML = html;
+      panel.style.display = 'block';
+      panel.style.borderColor = color;
+    };
+
+    // ── HIGHLIGHT ──
+    window.highlightFlow = function(focusId, flowArray) {
+      let targets = new Set();
+      if(flowArray) {
+        targets = new Set(flowArray);
+      } else if(focusId) {
+        edgesData.forEach(e => {
+          if(e.from===focusId) targets.add(e.to);
+          if(e.to===focusId) targets.add(e.from);
+        });
+        targets.add(focusId);
+      }
+      visNodes.forEach(n => visNodes.update({ id:n.id, opacity: targets.size===0?1:targets.has(n.id)?1:0.15 }));
+      visEdges.forEach(e => visEdges.update({ id:e.id, color:{ opacity: targets.size===0?0.6:(targets.has(e.from)&&targets.has(e.to))?0.85:0.05 } }));
+    };
+
+    // ── LAYOUT ──
+    window.setLayout = function(type, btn) {
+      document.querySelectorAll('#tab-mapa .btn').forEach(b => { if(b.textContent.includes('Jerárquica')||b.textContent.includes('Libre')) b.classList.remove('active'); });
+      if(btn) btn.classList.add('active');
+      if(type === 'hierarchical') {
+        network.setOptions({ layout:{ hierarchical:{ enabled:true, direction:'UD', sortMethod:'directed', levelSeparation:160, nodeSpacing:220, treeSpacing:260 } }, physics:{ enabled:true, solver:'hierarchicalRepulsion' } });
+      } else {
+        network.setOptions({ layout:{ hierarchical:{ enabled:false } }, physics:{ enabled:true, solver:'forceAtlas2Based', forceAtlas2Based:{ gravitationalConstant:-80, centralGravity:0.01, springLength:180, springConstant:0.07 } } });
+      }
+      setTimeout(() => network.fit({ animation:true }), 100);
+    };
+
+    // ── FLOWS ──
+    window.showFlow = function(name, btn) {
+      document.querySelectorAll('#tab-mapa .btn').forEach(b => { if(!b.textContent.includes('Jerárquica')&&!b.textContent.includes('Libre')) b.classList.remove('active'); });
+      if(btn) btn.classList.add('active');
+      const ids = flowSets[name] || flowSets.global;
+      highlightFlow(null, ids);
+      network.fit({ nodes:ids, animation:{ duration:600 } });
+    };
+
+    // ── RESET ──
+    window.resetView = function(fit=true) {
+      visNodes.forEach(n => visNodes.update({ id:n.id, opacity:1 }));
+      visEdges.forEach(e => visEdges.update({ id:e.id, color:{ opacity:0.6 } }));
+      if(fit) network.fit({ animation:true });
+      document.getElementById('detailsPanel').style.display = 'none';
+    };
+
+    // ── SEARCH ──
+    window.filterNodes = function() {
+      const q = document.getElementById('search').value.toLowerCase();
+      if(!q) { resetView(false); return; }
+      const matched = nodesData.filter(n => {
+        return [n.id,n.label,n.desc||'',(n.stack||[]).join(' '),(n.api||[]).join(' '),(n.responsibilities||[]).join(' ')].join(' ').toLowerCase().includes(q);
+      }).map(n => n.id);
+      highlightFlow(null, matched);
+      if(matched.length===1) { network.selectNodes([matched[0]]); network.focus(matched[0],{scale:1.3,animation:true}); showNodeDetails(matched[0]); }
+      else if(matched.length>0) { network.fit({ nodes:matched, animation:true }); }
+    };
+
+    // ── INIT ──
+    window.onload = function() {
+      network.once('stabilized', function() {
+        network.fit({ animation:{ duration:800 } });
+      });
+    };
+
+    document.addEventListener('keydown', e => { if(e.key==='Escape') resetView(); });
+  </script>
+</body>
+</html>

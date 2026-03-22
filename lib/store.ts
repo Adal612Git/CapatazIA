@@ -27,8 +27,8 @@ import {
   hydrateTestDrives,
   hydrateUsers,
 } from "@/lib/runtime-hydration";
+import { getAppSeed } from "@/lib/app-seeds";
 import { recomputeScoreSnapshots } from "@/lib/score";
-import { seedData } from "@/lib/seed-data";
 import type {
   ActivityEntry,
   Alert,
@@ -36,6 +36,10 @@ import type {
   ChecklistInstance,
   Column,
   CreditFile,
+  FinanceAccount,
+  FinanceApplication,
+  FinanceInsight,
+  FinanceMovement,
   GeneratedReport,
   OperationalNote,
   OperationalSuggestion,
@@ -51,9 +55,11 @@ import type {
   User,
   WeeklyPoint,
   Workspace,
+  SystemMode,
 } from "@/lib/types";
 
 interface AppState {
+  systemMode: SystemMode;
   workspace: Workspace;
   users: User[];
   columns: Column[];
@@ -68,6 +74,10 @@ interface AppState {
   bellIncidents: BellIncident[];
   postSaleFollowUps: PostSaleFollowUp[];
   scheduledBroadcasts: ScheduledBroadcast[];
+  financeAccounts: FinanceAccount[];
+  financeMovements: FinanceMovement[];
+  financeApplications: FinanceApplication[];
+  financeInsights: FinanceInsight[];
   runtimeReports: GeneratedReport[];
   runtimeNotes: OperationalNote[];
   runtimeSuggestions: OperationalSuggestion[];
@@ -77,6 +87,7 @@ interface AppState {
   selectedTaskId: string | null;
   hydrated: boolean;
   initialize: () => void;
+  switchSystemMode: (systemMode: SystemMode) => Promise<void>;
   setHydrated: (value: boolean) => void;
   syncRuntimeFromServer: () => Promise<void>;
   pushRuntimeToServer: () => Promise<void>;
@@ -117,6 +128,34 @@ interface AppState {
   runTeamReminderNow: (actorId: string) => Promise<{ ok: boolean; message?: string }>;
   markAlertRead: (alertId: string) => void;
   addColumn: (title: string, color: string) => void;
+}
+
+function createSeedState(systemMode: SystemMode) {
+  const seed = getAppSeed(systemMode);
+
+  return {
+    systemMode,
+    workspace: seed.workspace,
+    users: seed.users,
+    columns: seed.columns,
+    tasks: seed.tasks,
+    checklists: seed.checklists,
+    alerts: seed.alerts,
+    activity: seed.activity,
+    prospects: seed.prospects,
+    testDrives: seed.testDrives,
+    salesOperations: seed.salesOperations,
+    creditFiles: seed.creditFiles,
+    bellIncidents: seed.bellIncidents,
+    postSaleFollowUps: seed.postSaleFollowUps,
+    scheduledBroadcasts: seed.scheduledBroadcasts,
+    financeAccounts: seed.financeAccounts,
+    financeMovements: seed.financeMovements,
+    financeApplications: seed.financeApplications,
+    financeInsights: seed.financeInsights,
+    scoreSnapshots: seed.scoreSnapshots,
+    weekly: seed.weekly,
+  };
 }
 
 function appendActivity(activity: ActivityEntry[], actorId: string, message: string) {
@@ -173,11 +212,15 @@ function operationStageToProspectStatus(stage: SalesOperation["stage"]): Prospec
   }
 }
 
-function creditRequiredDocuments() {
+function creditRequiredDocuments(systemMode: SystemMode) {
+  if (systemMode === "hospital") {
+    return ["Poliza", "INE", "Orden medica", "Consentimiento informado"];
+  }
+
   return ["Solicitud firmada", "INE", "Comprobante de domicilio", "Estados de cuenta"];
 }
 
-function buildPostSaleFollowUpFromOperation(operation: SalesOperation): PostSaleFollowUp {
+function buildPostSaleFollowUpFromOperation(operation: SalesOperation, systemMode: SystemMode): PostSaleFollowUp {
   const dueAt = new Date(operation.closedAt ?? operation.updatedAt);
   dueAt.setDate(dueAt.getDate() + 5);
 
@@ -193,7 +236,10 @@ function buildPostSaleFollowUpFromOperation(operation: SalesOperation): PostSale
     saleDate: operation.closedAt ?? operation.updatedAt,
     dueAt: dueAt.toISOString(),
     status: "pending",
-    nextStep: "Llamar a cliente, validar experiencia y agendar siguiente contacto post-venta.",
+    nextStep:
+      systemMode === "hospital"
+        ? "Llamar a paciente o familiar, validar sintomas, indicaciones y cita de control."
+        : "Llamar a cliente, validar experiencia y agendar siguiente contacto post-venta.",
   };
 }
 
@@ -262,6 +308,7 @@ function refreshScoreSnapshots(state: Pick<AppState, "users" | "tasks" | "checkl
 function buildRuntimeSyncSignature(
   state: Pick<
     AppState,
+    | "systemMode"
     | "users"
     | "tasks"
     | "checklists"
@@ -274,12 +321,19 @@ function buildRuntimeSyncSignature(
     | "bellIncidents"
     | "postSaleFollowUps"
     | "scheduledBroadcasts"
+    | "financeAccounts"
+    | "financeMovements"
+    | "financeApplications"
+    | "financeInsights"
+    | "scoreSnapshots"
+    | "weekly"
     | "runtimeReports"
     | "runtimeNotes"
     | "runtimeSuggestions"
   >,
 ) {
   return JSON.stringify({
+    systemMode: state.systemMode,
     users: state.users,
     tasks: state.tasks,
     checklists: state.checklists,
@@ -292,14 +346,20 @@ function buildRuntimeSyncSignature(
     bellIncidents: state.bellIncidents,
     postSaleFollowUps: state.postSaleFollowUps,
     scheduledBroadcasts: state.scheduledBroadcasts,
+    financeAccounts: state.financeAccounts,
+    financeMovements: state.financeMovements,
+    financeApplications: state.financeApplications,
+    financeInsights: state.financeInsights,
+    scoreSnapshots: state.scoreSnapshots,
+    weekly: state.weekly,
     runtimeReports: state.runtimeReports,
     runtimeNotes: state.runtimeNotes,
     runtimeSuggestions: state.runtimeSuggestions,
   });
 }
 
-async function fetchRuntimePayload() {
-  const response = await fetch("/api/capataz/runtime", {
+async function fetchRuntimePayload(systemMode: SystemMode) {
+  const response = await fetch(`/api/capataz/runtime?systemMode=${encodeURIComponent(systemMode)}`, {
     method: "GET",
     cache: "no-store",
   });
@@ -312,7 +372,7 @@ async function fetchRuntimePayload() {
 }
 
 async function pushRuntimePayload(payload: RuntimeSyncPayload) {
-  const response = await fetch("/api/capataz/runtime", {
+  const response = await fetch(`/api/capataz/runtime?systemMode=${encodeURIComponent(payload.systemMode)}`, {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
@@ -325,8 +385,8 @@ async function pushRuntimePayload(payload: RuntimeSyncPayload) {
   }
 }
 
-async function runBroadcastNowRequest(broadcastId: string) {
-  const response = await fetch(`/api/capataz/broadcasts/${broadcastId}/run`, {
+async function runBroadcastNowRequest(broadcastId: string, systemMode: SystemMode) {
+  const response = await fetch(`/api/capataz/broadcasts/${broadcastId}/run?systemMode=${encodeURIComponent(systemMode)}`, {
     method: "POST",
   });
 
@@ -337,8 +397,8 @@ async function runBroadcastNowRequest(broadcastId: string) {
   return (await response.json()) as { ok: boolean; delivered: number };
 }
 
-async function runTeamReminderRequest() {
-  const response = await fetch("/api/capataz/broadcasts/team-reminder/run", {
+async function runTeamReminderRequest(systemMode: SystemMode) {
+  const response = await fetch(`/api/capataz/broadcasts/team-reminder/run?systemMode=${encodeURIComponent(systemMode)}`, {
     method: "POST",
   });
 
@@ -352,48 +412,53 @@ async function runTeamReminderRequest() {
 export const useAppStore = create<AppState>()(
   persist(
     (set, get) => ({
-      ...seedData,
+      ...createSeedState("automotive"),
       runtimeReports: [],
       runtimeNotes: [],
       runtimeSuggestions: [],
-      prospects: seedData.prospects,
-      testDrives: seedData.testDrives,
-      salesOperations: seedData.salesOperations,
-      creditFiles: seedData.creditFiles,
-      bellIncidents: seedData.bellIncidents,
-      postSaleFollowUps: seedData.postSaleFollowUps,
-      scheduledBroadcasts: seedData.scheduledBroadcasts,
       sessionUserId: null,
       selectedTaskId: null,
       hydrated: false,
       initialize: () => {
         set((state) => {
-          const hydratedUsers = state.users?.length ? hydrateUsers(state.users) : seedData.users;
+          const systemMode = state.systemMode ?? state.workspace?.systemMode ?? "automotive";
+          const seed = getAppSeed(systemMode);
+          const hydratedUsers = state.users?.length ? hydrateUsers(state.users, systemMode) : seed.users;
           const nextState = {
             ...state,
-            workspace: state.workspace ?? seedData.workspace,
+            systemMode,
+            workspace: state.workspace?.systemMode === systemMode ? state.workspace : seed.workspace,
             users: hydratedUsers,
-            columns: state.columns?.length ? state.columns : seedData.columns,
-            tasks: state.tasks?.length ? state.tasks : seedData.tasks,
-            checklists: state.checklists?.length ? state.checklists : seedData.checklists,
-            alerts: state.alerts?.length ? state.alerts : seedData.alerts,
-            activity: state.activity?.length ? state.activity : seedData.activity,
-            prospects: hydrateProspects(state.prospects?.length ? state.prospects : seedData.prospects),
-            testDrives: hydrateTestDrives(state.testDrives?.length ? state.testDrives : seedData.testDrives),
-            salesOperations: hydrateSalesOperations(state.salesOperations?.length ? state.salesOperations : seedData.salesOperations),
-            creditFiles: hydrateCreditFiles(state.creditFiles?.length ? state.creditFiles : seedData.creditFiles),
-            bellIncidents: hydrateBellIncidents(state.bellIncidents?.length ? state.bellIncidents : seedData.bellIncidents),
+            columns: state.columns?.length ? state.columns : seed.columns,
+            tasks: state.tasks?.length ? state.tasks : seed.tasks,
+            checklists: state.checklists?.length ? state.checklists : seed.checklists,
+            alerts: state.alerts?.length ? state.alerts : seed.alerts,
+            activity: state.activity?.length ? state.activity : seed.activity,
+            prospects: hydrateProspects(state.prospects?.length ? state.prospects : seed.prospects, systemMode),
+            testDrives: hydrateTestDrives(state.testDrives?.length ? state.testDrives : seed.testDrives, systemMode),
+            salesOperations: hydrateSalesOperations(
+              state.salesOperations?.length ? state.salesOperations : seed.salesOperations,
+              systemMode,
+            ),
+            creditFiles: hydrateCreditFiles(state.creditFiles?.length ? state.creditFiles : seed.creditFiles, systemMode),
+            bellIncidents: hydrateBellIncidents(state.bellIncidents?.length ? state.bellIncidents : seed.bellIncidents, systemMode),
             postSaleFollowUps: hydratePostSaleFollowUps(
-              state.postSaleFollowUps?.length ? state.postSaleFollowUps : seedData.postSaleFollowUps,
+              state.postSaleFollowUps?.length ? state.postSaleFollowUps : seed.postSaleFollowUps,
+              systemMode,
             ),
             scheduledBroadcasts: hydrateScheduledBroadcasts(
-              state.scheduledBroadcasts?.length ? state.scheduledBroadcasts : seedData.scheduledBroadcasts,
+              state.scheduledBroadcasts?.length ? state.scheduledBroadcasts : seed.scheduledBroadcasts,
+              systemMode,
             ),
+            financeAccounts: state.financeAccounts?.length ? state.financeAccounts : seed.financeAccounts,
+            financeMovements: state.financeMovements?.length ? state.financeMovements : seed.financeMovements,
+            financeApplications: state.financeApplications?.length ? state.financeApplications : seed.financeApplications,
+            financeInsights: state.financeInsights?.length ? state.financeInsights : seed.financeInsights,
             runtimeReports: state.runtimeReports ?? [],
             runtimeNotes: state.runtimeNotes ?? [],
             runtimeSuggestions: state.runtimeSuggestions ?? [],
-            scoreSnapshots: state.scoreSnapshots?.length ? state.scoreSnapshots : seedData.scoreSnapshots,
-            weekly: state.weekly?.length ? state.weekly : seedData.weekly,
+            scoreSnapshots: state.scoreSnapshots?.length ? state.scoreSnapshots : seed.scoreSnapshots,
+            weekly: state.weekly?.length ? state.weekly : seed.weekly,
           };
 
           return {
@@ -402,11 +467,24 @@ export const useAppStore = create<AppState>()(
           };
         });
       },
+      switchSystemMode: async (systemMode) => {
+        const seedState = createSeedState(systemMode);
+        set({
+          ...seedState,
+          runtimeReports: [],
+          runtimeNotes: [],
+          runtimeSuggestions: [],
+          sessionUserId: null,
+          selectedTaskId: null,
+        });
+        await get().pushRuntimeToServer();
+      },
       setHydrated: (value) => set({ hydrated: value }),
       syncRuntimeFromServer: async () => {
-        const payload = hydrateRuntimePayload(await fetchRuntimePayload());
+        const payload = hydrateRuntimePayload(await fetchRuntimePayload(get().systemMode));
         set((state) => {
           const nextSignature = buildRuntimeSyncSignature({
+            systemMode: payload.systemMode,
             users: payload.users,
             tasks: payload.tasks,
             checklists: payload.checklists,
@@ -419,6 +497,12 @@ export const useAppStore = create<AppState>()(
             bellIncidents: payload.bellIncidents,
             postSaleFollowUps: payload.postSaleFollowUps,
             scheduledBroadcasts: payload.scheduledBroadcasts,
+            financeAccounts: payload.financeAccounts,
+            financeMovements: payload.financeMovements,
+            financeApplications: payload.financeApplications,
+            financeInsights: payload.financeInsights,
+            scoreSnapshots: payload.scoreSnapshots,
+            weekly: payload.weekly,
             runtimeReports: payload.reports,
             runtimeNotes: payload.notes,
             runtimeSuggestions: payload.suggestions,
@@ -431,6 +515,8 @@ export const useAppStore = create<AppState>()(
 
           const nextState = {
             ...state,
+            systemMode: payload.systemMode,
+            workspace: getAppSeed(payload.systemMode).workspace,
             users: payload.users,
             tasks: payload.tasks,
             checklists: payload.checklists,
@@ -443,6 +529,12 @@ export const useAppStore = create<AppState>()(
             bellIncidents: payload.bellIncidents,
             postSaleFollowUps: payload.postSaleFollowUps,
             scheduledBroadcasts: payload.scheduledBroadcasts,
+            financeAccounts: payload.financeAccounts,
+            financeMovements: payload.financeMovements,
+            financeApplications: payload.financeApplications,
+            financeInsights: payload.financeInsights,
+            scoreSnapshots: payload.scoreSnapshots,
+            weekly: payload.weekly,
             runtimeReports: payload.reports,
             runtimeNotes: payload.notes,
             runtimeSuggestions: payload.suggestions,
@@ -457,6 +549,7 @@ export const useAppStore = create<AppState>()(
       pushRuntimeToServer: async () => {
         const state = get();
         await pushRuntimePayload({
+          systemMode: state.systemMode,
           users: state.users,
           tasks: state.tasks,
           checklists: state.checklists,
@@ -469,6 +562,12 @@ export const useAppStore = create<AppState>()(
           bellIncidents: state.bellIncidents,
           postSaleFollowUps: state.postSaleFollowUps,
           scheduledBroadcasts: state.scheduledBroadcasts,
+          financeAccounts: state.financeAccounts,
+          financeMovements: state.financeMovements,
+          financeApplications: state.financeApplications,
+          financeInsights: state.financeInsights,
+          scoreSnapshots: state.scoreSnapshots,
+          weekly: state.weekly,
           reports: state.runtimeReports,
           notes: state.runtimeNotes,
           suggestions: state.runtimeSuggestions,
@@ -1068,7 +1167,7 @@ export const useAppStore = create<AppState>()(
                 followUp.agency === operation.agency,
             )
           ) {
-            nextPostSale = [buildPostSaleFollowUpFromOperation(operation), ...nextPostSale];
+            nextPostSale = [buildPostSaleFollowUpFromOperation(operation, state.systemMode), ...nextPostSale];
           }
 
           const nextCreditFiles: CreditFile[] = state.creditFiles.map((creditFile) =>
@@ -1155,7 +1254,7 @@ export const useAppStore = create<AppState>()(
           return { ok: false, message: "La operacion ya tiene expediente." };
         }
 
-        const requiredDocuments = creditRequiredDocuments();
+        const requiredDocuments = creditRequiredDocuments(state.systemMode);
         const creditFile: CreditFile = {
           id: crypto.randomUUID(),
           groupId: operation.groupId,
@@ -1419,7 +1518,7 @@ export const useAppStore = create<AppState>()(
           return { ok: false, message: "No se encontro el broadcast." };
         }
 
-        await runBroadcastNowRequest(broadcastId);
+        await runBroadcastNowRequest(broadcastId, state.systemMode);
         await get().syncRuntimeFromServer();
         return { ok: true, message: `Broadcast "${broadcast.title}" enviado.` };
       },
@@ -1430,7 +1529,7 @@ export const useAppStore = create<AppState>()(
           return { ok: false, message: "Tu perfil no puede disparar recordatorios IA al equipo." };
         }
 
-        const result = await runTeamReminderRequest();
+        const result = await runTeamReminderRequest(state.systemMode);
         await get().syncRuntimeFromServer();
         return { ok: true, message: `Capataz IA envio ${result.delivered} recordatorios personalizados al equipo.` };
       },

@@ -75,6 +75,14 @@ const personaByUserId: Record<string, string> = {
   "usr-operator-2": "valeria",
   "usr-operator-3": "lucia",
   "usr-operator-4": "gael",
+  "h-usr-admin": "sofia",
+  "h-usr-owner": "lucia",
+  "h-usr-supervisor-1": "valeria",
+  "h-usr-supervisor-2": "gael",
+  "h-usr-operator-1": "mateo",
+  "h-usr-operator-2": "valeria",
+  "h-usr-operator-3": "lucia",
+  "h-usr-operator-4": "bruno",
 };
 
 export function getAssistantPersonaForUserId(userId?: string | null): AssistantPersona {

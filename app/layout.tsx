@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { Fredoka, Nunito } from "next/font/google";
+import { Manrope, Space_Grotesk } from "next/font/google";
 import "@lotosui/claude-arm/styles.css";
 import "./globals.css";
 
-const bodyFont = Nunito({
+const bodyFont = Manrope({
   subsets: ["latin"],
   variable: "--font-body",
 });
 
-const displayFont = Fredoka({
+const displayFont = Space_Grotesk({
   subsets: ["latin"],
   variable: "--font-display",
 });

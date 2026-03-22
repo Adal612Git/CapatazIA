@@ -4,20 +4,26 @@ import { useState } from "react";
 import { CalendarDays, ListFilter, Search } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ModuleHeader } from "@/components/module-header";
+import { EmptyState } from "@/components/ui/runtime-states";
+import { getDomainConfig } from "@/lib/domain-config";
 import { canMoveTask } from "@/lib/permissions";
 import { useCurrentUser, useAppStore } from "@/lib/store";
 import { cn, formatDateTime } from "@/lib/utils";
 
 export default function TasksPage() {
   const currentUser = useCurrentUser();
+  const systemMode = useAppStore((state) => state.systemMode);
   const users = useAppStore((state) => state.users);
   const tasks = useAppStore((state) => state.tasks);
   const moveTask = useAppStore((state) => state.moveTask);
   const selectTask = useAppStore((state) => state.selectTask);
+  const domain = getDomainConfig(systemMode);
   const [query, setQuery] = useState("");
   const [priority, setPriority] = useState("all");
   const [status, setStatus] = useState("all");
   const [dueDate, setDueDate] = useState("");
+  const openTasks = tasks.filter((task) => task.columnId !== "done");
+  const blockedTasks = tasks.filter((task) => task.columnId === "blocked");
 
   const visibleTasks = tasks.filter((task) => {
     if (currentUser?.role === "operator" && task.assigneeId !== currentUser.id) return false;
@@ -31,14 +37,53 @@ export default function TasksPage() {
     <div className="stack-lg">
       <ModuleHeader
         eyebrow="Operacion diaria"
-        title="Lista ejecutiva de tareas"
-        description="Junta diaria, seguimientos, pruebas de manejo, campana y post-venta con visibilidad completa."
+        title={systemMode === "hospital" ? "Lista ejecutiva de pendientes clinicos" : "Lista ejecutiva de tareas"}
+        description={
+          systemMode === "hospital"
+            ? "Huddles, ingresos, autorizaciones, incidentes y continuidad de alta con visibilidad completa."
+            : "Junta diaria, seguimientos, pruebas de manejo, campana y post-venta con visibilidad completa."
+        }
       />
+
+      <section className="hero-grid">
+        <article className="metric-card panel">
+          <div className="metric-top">
+            <span className="metric-label">Total visible</span>
+          </div>
+          <strong>{visibleTasks.length}</strong>
+          <p>Tareas despues de aplicar filtros, scope y busqueda.</p>
+        </article>
+        <article className="metric-card panel">
+          <div className="metric-top">
+            <span className="metric-label">Abiertas</span>
+          </div>
+          <strong>{openTasks.length}</strong>
+          <p>Trabajo operativo que aun requiere movimiento real.</p>
+        </article>
+        <article className="metric-card panel">
+          <div className="metric-top">
+            <span className="metric-label">Bloqueadas</span>
+          </div>
+          <strong>{blockedTasks.length}</strong>
+          <p>Casos atorados que exigen destrabe gerencial.</p>
+        </article>
+        <article className="metric-card panel">
+          <div className="metric-top">
+            <span className="metric-label">Tabla ejecutiva</span>
+          </div>
+          <strong>{domain.primaryUnitLabel}</strong>
+          <p>Prioridad, responsable, vencimiento y accion en una sola lectura.</p>
+        </article>
+      </section>
 
       <section className="filter-bar panel">
         <label className="search-field">
           <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar tarea, cliente, agencia o contexto" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={systemMode === "hospital" ? "Buscar pendiente, paciente, hospital o contexto" : "Buscar tarea, cliente, agencia o contexto"}
+          />
         </label>
         <label className="select-field">
           <ListFilter size={16} />
@@ -125,14 +170,14 @@ export default function TasksPage() {
                               type="button"
                               onClick={() => currentUser && moveTask(task.id, "in_progress", currentUser.id)}
                             >
-                              Tomar
+                              {systemMode === "hospital" ? "Atender" : "Tomar"}
                             </button>
                             <button
                               className="button-primary"
                               type="button"
                               onClick={() => currentUser && moveTask(task.id, "done", currentUser.id)}
                             >
-                              Cerrar
+                              {systemMode === "hospital" ? "Resolver" : "Cerrar"}
                             </button>
                           </div>
                         ) : (
@@ -145,7 +190,10 @@ export default function TasksPage() {
               ) : (
                 <tr>
                   <td colSpan={6}>
-                    <div className="status status-warning">No hay tareas que coincidan con los filtros actuales.</div>
+                    <EmptyState
+                      title="No hay tareas que coincidan"
+                      body="Ajusta filtros o crea una nueva tarea para sostener el flujo demo completo."
+                    />
                   </td>
                 </tr>
               )}

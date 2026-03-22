@@ -28,15 +28,13 @@ function pickSpanishVoice(voices: SpeechSynthesisVoice[], preferredVoiceNames: s
 }
 
 export function TtsPlayButton({ text, label = "Reproducir audio", userId, preferredVoiceNames = [] }: TtsPlayButtonProps) {
-  const [supported, setSupported] = useState(false);
+  const supported = typeof window !== "undefined";
   const [speaking, setSpeaking] = useState(false);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const cachedUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setSupported(typeof window !== "undefined");
-
     return () => {
       if (cachedUrlRef.current) {
         URL.revokeObjectURL(cachedUrlRef.current);

@@ -36,17 +36,43 @@ export const taskEditSchema = z.object({
     .refine((value) => new Date(value).getTime() > Date.now(), "La fecha limite debe quedar en el futuro"),
 });
 
+export const systemModeSchema = z.enum(["automotive", "hospital"]);
+
+export const traceableActorSchema = z.object({
+  actorId: z.string().min(1, "actorId es requerido"),
+});
+
+export const taskMutationSchema = traceableActorSchema.extend({
+  systemMode: systemModeSchema.default("automotive"),
+  task: taskInputSchema,
+});
+
+export const reportRequestSchema = traceableActorSchema.extend({
+  systemMode: systemModeSchema.default("automotive"),
+  kind: z.enum(["general", "daily_closure", "blockers", "team_member"]).default("general"),
+  targetUserId: z.string().optional(),
+  persist: z.boolean().default(true),
+});
+
 export const capatazContracts = {
   auth: {
     route: "/login",
     roles: roleSchema.options,
   },
   tasks: {
+    route: "/api/v1/tasks",
     create: taskInputSchema,
     updateColumn: taskColumnSchema,
   },
+  dashboard: {
+    route: "/api/v1/dashboard/summary",
+  },
   score: {
+    route: "/api/v1/scores/summary",
     formula: "score = compliance*0.35 + speed*0.25 + consistency*0.25 + activity*0.15",
     window: "28 dias moviles",
+  },
+  reports: {
+    route: "/api/v1/reports/generate",
   },
 } as const;

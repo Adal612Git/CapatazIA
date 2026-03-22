@@ -1,9 +1,19 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { getAppConfig } from "@/lib/runtime-config";
+import type { SystemMode } from "@/lib/types";
 
 const SUPABASE_RUNTIME_TABLE = "capataz_runtime_snapshots";
-const SUPABASE_RUNTIME_ROW_ID = "default";
+
+function getRuntimeSnapshotId(systemMode: SystemMode) {
+  return `runtime-${systemMode}`;
+}
+
+function getRuntimeFilePath(baseFilePath: string, systemMode: SystemMode) {
+  const extension = path.extname(baseFilePath);
+  const basename = extension ? baseFilePath.slice(0, -extension.length) : baseFilePath;
+  return `${basename}-${systemMode}${extension || ".json"}`;
+}
 
 async function readFromFile<T>(filePath: string) {
   const payload = await fs.readFile(filePath, "utf8");
@@ -24,10 +34,10 @@ function getSupabaseHeaders() {
   };
 }
 
-async function readFromSupabase<T>() {
+async function readFromSupabase<T>(systemMode: SystemMode) {
   const config = getAppConfig();
   const endpoint = new URL(`/rest/v1/${SUPABASE_RUNTIME_TABLE}`, config.supabaseUrl);
-  endpoint.searchParams.set("id", `eq.${SUPABASE_RUNTIME_ROW_ID}`);
+  endpoint.searchParams.set("id", `eq.${getRuntimeSnapshotId(systemMode)}`);
   endpoint.searchParams.set("select", "payload");
 
   const response = await fetch(endpoint, {
@@ -44,7 +54,7 @@ async function readFromSupabase<T>() {
   return rows[0]?.payload ?? null;
 }
 
-async function writeToSupabase(payload: unknown) {
+async function writeToSupabase(payload: unknown, systemMode: SystemMode) {
   const config = getAppConfig();
   const endpoint = new URL(`/rest/v1/${SUPABASE_RUNTIME_TABLE}`, config.supabaseUrl);
 
@@ -55,7 +65,7 @@ async function writeToSupabase(payload: unknown) {
       Prefer: "resolution=merge-duplicates,return=minimal",
     },
     body: JSON.stringify({
-      id: SUPABASE_RUNTIME_ROW_ID,
+      id: getRuntimeSnapshotId(systemMode),
       payload,
       updated_at: new Date().toISOString(),
     }),
@@ -66,12 +76,12 @@ async function writeToSupabase(payload: unknown) {
   }
 }
 
-export async function loadRuntimeSnapshot<T>() {
+export async function loadRuntimeSnapshot<T>(systemMode: SystemMode = "automotive") {
   const config = getAppConfig();
 
   if (config.runtimeBackend === "supabase") {
     try {
-      const payload = await readFromSupabase<T>();
+      const payload = await readFromSupabase<T>(systemMode);
       if (payload) {
         return payload;
       }
@@ -81,23 +91,23 @@ export async function loadRuntimeSnapshot<T>() {
   }
 
   try {
-    return await readFromFile<T>(config.runtimeFile);
+    return await readFromFile<T>(getRuntimeFilePath(config.runtimeFile, systemMode));
   } catch {
     return null;
   }
 }
 
-export async function persistRuntimeSnapshot(payload: unknown) {
+export async function persistRuntimeSnapshot(payload: unknown, systemMode: SystemMode = "automotive") {
   const config = getAppConfig();
 
   if (config.runtimeBackend === "supabase") {
     try {
-      await writeToSupabase(payload);
+      await writeToSupabase(payload, systemMode);
       return;
     } catch {
       // Fall through to file persistence for local/dev resilience.
     }
   }
 
-  await writeToFile(config.runtimeFile, payload);
+  await writeToFile(getRuntimeFilePath(config.runtimeFile, systemMode), payload);
 }

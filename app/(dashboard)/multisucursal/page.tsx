@@ -3,10 +3,12 @@
 import { Building2, ShieldAlert, Trophy } from "lucide-react";
 import { buildAgencyMetrics, collectAgencyNames } from "@/lib/automotive";
 import { ModuleHeader } from "@/components/module-header";
+import { getDomainConfig } from "@/lib/domain-config";
 import { useCurrentUser, useAppStore } from "@/lib/store";
 
 export default function MultiAgencyPage() {
   const currentUser = useCurrentUser();
+  const systemMode = useAppStore((state) => state.systemMode);
   const users = useAppStore((state) => state.users);
   const prospects = useAppStore((state) => state.prospects);
   const testDrives = useAppStore((state) => state.testDrives);
@@ -14,6 +16,7 @@ export default function MultiAgencyPage() {
   const creditFiles = useAppStore((state) => state.creditFiles);
   const bellIncidents = useAppStore((state) => state.bellIncidents);
   const postSaleFollowUps = useAppStore((state) => state.postSaleFollowUps);
+  const domain = getDomainConfig(systemMode);
 
   const agencies = collectAgencyNames({
     users,
@@ -56,14 +59,14 @@ export default function MultiAgencyPage() {
     <div className="stack-lg">
       <ModuleHeader
         eyebrow="Multisucursal"
-        title="Comparativo por agencia"
-        description="Lectura corporativa para Director o Gerente de Marca: conversion, credito, campana y post-venta en el mismo corte."
+        title={domain.multisiteTitle}
+        description={domain.multisiteDescription}
       />
 
       <section className="hero-grid">
         <article className="metric-card panel">
           <div className="metric-top">
-            <span className="metric-label">Agencia lider</span>
+            <span className="metric-label">{systemMode === "hospital" ? "Hospital lider" : "Agencia lider"}</span>
             <Trophy className="icon-accent icon-amber" size={18} />
           </div>
           <strong>{topAgency?.agency ?? "--"}</strong>
@@ -79,7 +82,7 @@ export default function MultiAgencyPage() {
         </article>
         <article className="metric-card panel">
           <div className="metric-top">
-            <span className="metric-label">Agencias</span>
+            <span className="metric-label">{systemMode === "hospital" ? "Hospitales" : "Agencias"}</span>
             <Building2 className="icon-accent" size={18} />
           </div>
           <strong>{metrics.length}</strong>
@@ -92,7 +95,7 @@ export default function MultiAgencyPage() {
           <article key={agency.agency} className="panel agency-card stack-md">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Agencia</p>
+                <p className="eyebrow">{systemMode === "hospital" ? "Hospital" : "Agencia"}</p>
                 <h3>{agency.agency}</h3>
               </div>
               <span className="pill pill-muted">{agency.creditApprovalRate}% aprobacion</span>

@@ -13,10 +13,10 @@ import type {
 } from "@/lib/types";
 
 export const navigationByRole = {
-  admin: ["dashboard", "junta", "pipeline", "tasks", "kanban", "team", "postventa", "campana", "multisucursal", "score", "reports", "checklists", "alerts", "whatsapp", "settings"],
-  owner: ["dashboard", "junta", "pipeline", "tasks", "kanban", "team", "postventa", "campana", "score", "reports", "checklists", "alerts", "whatsapp", "settings"],
-  supervisor: ["dashboard", "junta", "pipeline", "tasks", "kanban", "team", "postventa", "campana", "score", "reports", "checklists", "alerts", "whatsapp"],
-  operator: ["dashboard", "pipeline", "tasks", "kanban", "postventa", "campana", "score", "checklists", "alerts", "whatsapp"],
+  admin: ["dashboard", "junta", "pipeline", "tasks", "kanban", "team", "postventa", "campana", "multisucursal", "score", "fintech", "reports", "checklists", "alerts", "whatsapp", "settings"],
+  owner: ["dashboard", "junta", "pipeline", "tasks", "kanban", "team", "postventa", "campana", "score", "fintech", "reports", "checklists", "alerts", "whatsapp", "settings"],
+  supervisor: ["dashboard", "junta", "pipeline", "tasks", "kanban", "team", "postventa", "campana", "score", "fintech", "reports", "checklists", "alerts", "whatsapp"],
+  operator: ["dashboard", "pipeline", "tasks", "kanban", "postventa", "campana", "score", "fintech", "reports", "checklists", "alerts", "whatsapp"],
 } satisfies Record<Role, string[]>;
 
 const salesRoutes = new Set(["junta", "pipeline", "postventa"]);

@@ -1,9 +1,12 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useState } from "react";
+import { MessageCircleMore, ShieldCheck, Sparkles } from "lucide-react";
 import { getAssistantPersonaForUserId } from "@/lib/assistant-personas";
 import { TtsPlayButton } from "@/components/tts-play-button";
-import { seedData } from "@/lib/seed-data";
+import { getDomainConfig } from "@/lib/domain-config";
+import { useAppStore } from "@/lib/store";
 
 type DemoUser = {
   id: string;
@@ -50,53 +53,61 @@ const roleLabel: Record<string, string> = {
   operator: "Operador / Campo",
 };
 
-const demoUsers: DemoUser[] = seedData.users
-  .filter((user) => Boolean(user.phone))
-  .map((user) => ({
-    id: user.id,
-    label: user.avatar,
-    name: user.name,
-    email: user.email,
-    password: user.password,
-    phone: user.phone as string,
-    role: roleLabel[user.role] ?? user.role,
-    site: user.site,
-    statusLabel: user.statusLabel,
-  }));
-
-const quickPrompts = [
-  "ayuda",
-  "mis tareas",
-  "reporte general",
-  "mis prospectos",
-  "mis seguimientos",
-  "campana",
-];
-
 export default function DemoWhatsAppPage() {
-  const [selectedUserId, setSelectedUserId] = useState<string>(demoUsers[0].id);
+  const initialize = useAppStore((state) => state.initialize);
+  const users = useAppStore((state) => state.users);
+  const systemMode = useAppStore((state) => state.systemMode);
+  const domain = getDomainConfig(systemMode);
+  const demoUsers = useMemo(
+    () =>
+      users
+        .filter((user) => Boolean(user.phone))
+        .map((user) => ({
+          id: user.id,
+          label: user.avatar,
+          name: user.name,
+          email: user.email,
+          password: user.password,
+          phone: user.phone as string,
+          role: roleLabel[user.role] ?? user.role,
+          site: user.site,
+          statusLabel: user.statusLabel,
+        })),
+    [users],
+  );
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("reporte general");
+  const [input, setInput] = useState("");
   const [mode, setMode] = useState("rules");
   const [provider, setProvider] = useState("mock");
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState("Sin lectura todavia.");
   const [lastReport, setLastReport] = useState<ChatPayload["latestReport"]>(null);
 
-  const selectedUser = useMemo(
-    () => demoUsers.find((user) => user.id === selectedUserId) ?? demoUsers[0],
-    [selectedUserId],
-  );
-  const assistantPersona = getAssistantPersonaForUserId(selectedUser.id);
+  const resolvedSelectedUserId = demoUsers.some((user) => user.id === selectedUserId) ? selectedUserId : (demoUsers[0]?.id ?? "");
+  const selectedUser = useMemo(() => demoUsers.find((user) => user.id === resolvedSelectedUserId) ?? demoUsers[0] ?? null, [demoUsers, resolvedSelectedUserId]);
+  const assistantPersona = getAssistantPersonaForUserId(selectedUser?.id);
+  const resolvedInput = input || domain.quickPrompts[2] || "reporte general";
+
+  useEffect(() => {
+    initialize();
+  }, [initialize]);
 
   useEffect(() => {
     let cancelled = false;
 
+    if (!selectedUser?.phone) {
+      return;
+    }
+
     async function loadConversation() {
       setLoading(true);
-      const response = await fetch(`/api/capataz/chat?phone=${encodeURIComponent(selectedUser.phone)}`, {
-        cache: "no-store",
-      });
+      const response = await fetch(
+        `/api/capataz/chat?phone=${encodeURIComponent(selectedUser.phone)}&systemMode=${encodeURIComponent(systemMode)}`,
+        {
+          cache: "no-store",
+        },
+      );
       const payload = (await response.json()) as ChatPayload;
 
       if (cancelled) {
@@ -116,10 +127,10 @@ export default function DemoWhatsAppPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedUser]);
+  }, [selectedUser, systemMode]);
 
   async function sendMessage(text: string) {
-    if (!text.trim()) {
+    if (!text.trim() || !selectedUser?.phone) {
       return;
     }
 
@@ -132,6 +143,7 @@ export default function DemoWhatsAppPage() {
       body: JSON.stringify({
         phone: selectedUser.phone,
         text,
+        systemMode,
       }),
     });
 
@@ -145,222 +157,144 @@ export default function DemoWhatsAppPage() {
     setLoading(false);
   }
 
+  if (!selectedUser) {
+    return <main className="loading-screen">Cargando demo de WhatsApp...</main>;
+  }
+
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "#f4f1ea",
-        color: "#1f1f1f",
-        padding: "24px",
-        fontFamily: "system-ui, sans-serif",
-      }}
-    >
-      <div style={{ maxWidth: "1100px", margin: "0 auto" }}>
-        <h1 style={{ margin: 0 }}>Demo basica WhatsApp Capataz</h1>
-        <p style={{ marginTop: "8px", marginBottom: "24px" }}>
-          Vista simple para presentacion. Usa el mismo elenco operativo del dashboard para probar conversaciones coherentes por rol.
-        </p>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "320px 1fr",
-            gap: "16px",
-            alignItems: "start",
-          }}
-        >
-          <aside
-            style={{
-              background: "#fff",
-              border: "1px solid #ddd",
-              borderRadius: "16px",
-              padding: "16px",
-            }}
-          >
-            <h2 style={{ marginTop: 0, fontSize: "18px" }}>Colaboradores demo</h2>
-            <div style={{ display: "grid", gap: "12px" }}>
-              {demoUsers.map((user) => (
-                <button
-                  key={user.id}
-                  type="button"
-                  onClick={() => setSelectedUserId(user.id)}
-                  style={{
-                    textAlign: "left",
-                    border: user.id === selectedUserId ? "2px solid #f28c38" : "1px solid #ddd",
-                    background: user.id === selectedUserId ? "#fff4ea" : "#fff",
-                    borderRadius: "12px",
-                    padding: "12px",
-                    cursor: "pointer",
-                  }}
-                >
-                  <strong>{user.label}</strong>
-                  <div>{user.name}</div>
-                  <div style={{ fontSize: "13px", color: "#555" }}>{user.role}</div>
-                  <div style={{ fontSize: "13px", color: "#555" }}>{user.site}</div>
-                  <div style={{ fontSize: "13px", color: "#555", marginTop: "8px" }}>email: {user.email}</div>
-                  <div style={{ fontSize: "13px", color: "#555" }}>pass: {user.password}</div>
-                  <div style={{ fontSize: "13px", color: "#555" }}>whats: {user.phone}</div>
-                  <div style={{ fontSize: "13px", color: "#555", marginTop: "8px" }}>{user.statusLabel}</div>
-                </button>
-              ))}
+    <main className="demo-whatsapp-page">
+      <div className="demo-chat-main">
+        <div className="demo-chat-shell">
+          <div className="demo-chat-header">
+            <div className="module-heading">
+              <p className="eyebrow">WhatsApp demo</p>
+              <h1>Consola conversacional premium para Capataz</h1>
+              <p className="module-copy">
+                Usa el mismo elenco operativo del dashboard para probar conversaciones coherentes por rol en {domain.reportContext}.
+              </p>
             </div>
-
-            <div
-              style={{
-                marginTop: "16px",
-                padding: "12px",
-                borderRadius: "12px",
-                background: "#f7f7f7",
-                fontSize: "13px",
-              }}
-            >
-              <strong>Estado</strong>
-              <div>Provider: {provider}</div>
-              <div>IA: {mode}</div>
+            <div className="chip-row">
+              <span className="report-chip">
+                <MessageCircleMore size={14} />
+                provider {provider}
+              </span>
+              <span className="report-chip">
+                <ShieldCheck size={14} />
+                IA {mode}
+              </span>
             </div>
-          </aside>
+          </div>
 
-          <section
-            style={{
-              background: "#fff",
-              border: "1px solid #ddd",
-              borderRadius: "16px",
-              overflow: "hidden",
-            }}
-          >
-            <header
-              style={{
-                padding: "16px",
-                borderBottom: "1px solid #eee",
-                background: "#f28c38",
-                color: "#fff",
-              }}
-            >
-              <strong>{selectedUser.name}</strong>
-              <div style={{ fontSize: "13px", opacity: 0.9 }}>{selectedUser.phone}</div>
-              <div style={{ fontSize: "12px", opacity: 0.82 }}>{assistantPersona.displayName} | {assistantPersona.toneLabel}</div>
-            </header>
-
-            <div style={{ padding: "12px", borderBottom: "1px solid #eee", background: "#faf7f2" }}>
-              <div style={{ fontSize: "13px", marginBottom: "8px" }}>
-                <strong>Lectura actual:</strong> {summary}
+          <div className="demo-chat-grid">
+            <aside className="panel demo-chat-sidebar">
+              <div className="panel-header">
+                <div>
+                  <p className="eyebrow">Colaboradores</p>
+                  <h3>Roster operativo</h3>
+                </div>
+                <span className="demo-chat-icon">
+                  <Sparkles size={16} />
+                </span>
               </div>
-              {lastReport ? (
-                <div style={{ fontSize: "13px" }}>
-                  <strong>Ultimo reporte:</strong> {lastReport.title}
-                </div>
-              ) : null}
-            </div>
-
-            <div
-              style={{
-                minHeight: "420px",
-                maxHeight: "420px",
-                overflowY: "auto",
-                padding: "16px",
-                background: "#efe7dd",
-                display: "grid",
-                gap: "10px",
-              }}
-            >
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  style={{
-                    justifySelf: message.role === "user" ? "end" : "start",
-                    maxWidth: "78%",
-                    background: message.role === "user" ? "#dcf8c6" : message.role === "assistant" ? "#fff" : "#f1f1f1",
-                    borderRadius: "12px",
-                    padding: "10px 12px",
-                    whiteSpace: "pre-wrap",
-                    fontSize: "14px",
-                    border: "1px solid rgba(0,0,0,0.08)",
-                  }}
-                >
-                  <div className="whatsapp-bubble-head" style={{ marginBottom: "4px" }}>
-                    <div style={{ fontWeight: 700, fontSize: "12px" }}>
-                      {message.role === "user" ? selectedUser.label : message.role === "assistant" ? assistantPersona.displayName : "Sistema"}
-                    </div>
-                    {message.role === "assistant" ? (
-                      <TtsPlayButton
-                        text={message.text}
-                        label={`Reproducir mensaje de ${assistantPersona.displayName}`}
-                        userId={selectedUser.id}
-                        preferredVoiceNames={assistantPersona.preferredVoiceNames}
-                      />
-                    ) : null}
-                  </div>
-                  {message.text}
-                  {message.media?.kind === "chart" ? (
-                    <img
-                      src={message.media.url}
-                      alt={message.media.alt}
-                      style={{ marginTop: "10px", width: "100%", borderRadius: "12px", border: "1px solid rgba(0,0,0,0.08)" }}
-                    />
-                  ) : null}
-                </div>
-              ))}
-
-              {!messages.length ? <div>No hay conversacion todavia.</div> : null}
-            </div>
-
-            <div style={{ padding: "12px", borderTop: "1px solid #eee", background: "#fff" }}>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "12px" }}>
-                {quickPrompts.map((prompt) => (
+              <div className="demo-chat-roster">
+                {demoUsers.map((user) => (
                   <button
-                    key={prompt}
+                    key={user.id}
                     type="button"
-                    onClick={() => setInput(prompt)}
-                    style={{
-                      border: "1px solid #f0d1b1",
-                      background: "#fff7ef",
-                      color: "#a95715",
-                      borderRadius: "999px",
-                      padding: "8px 12px",
-                      cursor: "pointer",
-                    }}
+                    className={`credential-card ${user.id === resolvedSelectedUserId ? "active" : ""}`}
+                    onClick={() => setSelectedUserId(user.id)}
                   >
+                    <div className="panel-header">
+                      <strong>
+                        {user.label} {user.name}
+                      </strong>
+                      <span className="pill pill-muted">{user.role}</span>
+                    </div>
+                    <div className="demo-chat-user-meta">
+                      <span>{user.site}</span>
+                      <span>email: {user.email}</span>
+                      <span>pass: {user.password}</span>
+                      <span>whats: {user.phone}</span>
+                      <span>{user.statusLabel}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </aside>
+
+            <section className="panel demo-chat-thread-shell">
+              <header className="demo-chat-thread-head">
+                <strong>{selectedUser.name}</strong>
+                <div>{selectedUser.phone}</div>
+                <div>
+                  {assistantPersona.displayName} | {assistantPersona.toneLabel}
+                </div>
+              </header>
+
+              <div className="demo-chat-balance detail-card">
+                <div>
+                  <strong>Lectura actual</strong>
+                  <p>{summary}</p>
+                </div>
+                {lastReport ? (
+                  <div>
+                    <strong>Ultimo reporte</strong>
+                    <p>{lastReport.title}</p>
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="demo-chat-thread">
+                {messages.map((message) => (
+                  <div key={message.id} className={`demo-chat-bubble ${message.role}`}>
+                    <div className="demo-chat-bubble-head">
+                      <div>
+                        {message.role === "user" ? selectedUser.label : message.role === "assistant" ? assistantPersona.displayName : "Sistema"}
+                      </div>
+                      {message.role === "assistant" ? (
+                        <TtsPlayButton
+                          text={message.text}
+                          label={`Reproducir mensaje de ${assistantPersona.displayName}`}
+                          userId={selectedUser.id}
+                          preferredVoiceNames={assistantPersona.preferredVoiceNames}
+                        />
+                      ) : null}
+                    </div>
+                    {message.text}
+                    {message.media?.kind === "chart" ? <img className="whatsapp-chart" src={message.media.url} alt={message.media.alt} /> : null}
+                  </div>
+                ))}
+
+                {!messages.length ? <div className="status">No hay conversacion todavia.</div> : null}
+              </div>
+
+              <div className="demo-chat-quick-actions">
+                {domain.quickPrompts.map((prompt) => (
+                  <button key={prompt} type="button" className="button-ghost" onClick={() => setInput(prompt)}>
                     {prompt}
                   </button>
                 ))}
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "10px" }}>
+              <form
+                className="copilot-composer"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void sendMessage(resolvedInput);
+                }}
+              >
                 <textarea
-                  value={input}
+                  value={resolvedInput}
                   onChange={(event) => setInput(event.target.value)}
                   placeholder="Escribe como si fueras el colaborador..."
                   rows={3}
-                  style={{
-                    width: "100%",
-                    border: "1px solid #ddd",
-                    borderRadius: "12px",
-                    padding: "12px",
-                    resize: "vertical",
-                    font: "inherit",
-                  }}
                 />
-
-                <button
-                  type="button"
-                  onClick={() => void sendMessage(input)}
-                  disabled={loading}
-                  style={{
-                    minWidth: "140px",
-                    border: "none",
-                    borderRadius: "12px",
-                    padding: "12px 16px",
-                    background: loading ? "#d8d8d8" : "#f28c38",
-                    color: "#fff",
-                    cursor: loading ? "not-allowed" : "pointer",
-                    fontWeight: 700,
-                  }}
-                >
+                <button className="button-primary" type="submit" disabled={loading}>
                   {loading ? "Enviando..." : "Enviar"}
                 </button>
-              </div>
-            </div>
-          </section>
+              </form>
+            </section>
+          </div>
         </div>
       </div>
     </main>

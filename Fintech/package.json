@@ -1,0 +1,16 @@
+{
+  "name": "tpc-fintech",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "concurrently \"pnpm --dir apps/api start:dev\" \"pnpm --dir apps/web dev --host\"",
+    "dev:api": "pnpm --dir apps/api start:dev",
+    "dev:web": "pnpm --dir apps/web dev --host",
+    "build": "pnpm --dir apps/api build && pnpm --dir apps/web build",
+    "lint": "pnpm --dir apps/api lint && pnpm --dir apps/web lint",
+    "test": "pnpm --dir apps/api test:e2e && pnpm --dir apps/web build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

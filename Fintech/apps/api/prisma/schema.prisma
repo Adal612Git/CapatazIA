@@ -1,0 +1,477 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id                 String                   @id @default(cuid())
+  name               String
+  segment            String
+  region             String
+  regulatory_status  String
+  created_at         DateTime                 @default(now())
+  updated_at         DateTime                 @updatedAt
+  roles              Role[]
+  memberships        OrganizationMembership[]
+  staff_profiles     StaffProfile[]
+  wallet_accounts    WalletAccount[]
+  ledger_accounts    LedgerAccount[]
+  ledger_entries     LedgerEntry[]
+  beneficiaries      Beneficiary[]
+  money_transfers    MoneyTransfer[]
+  portfolios         Portfolio[]
+  order_intents      OrderIntent[]
+  risk_profiles      RiskProfile[]
+  broker_connectors  BrokerConnector[]
+  channels_whatsapp  ChannelWhatsapp[]
+  conversations      Conversation[]
+  agent_memories     AgentMemory[]
+  tasks              Task[]
+  reminders          Reminder[]
+  approval_policies  ApprovalPolicy[]
+  approvals          Approval[]
+  events             Event[]
+  provider_webhooks  ProviderWebhook[]
+  integration_outbox IntegrationOutbox[]
+  audit_events       AuditEvent[]
+  workflow_runs      WorkflowRun[]
+
+  @@map("organizations")
+}
+
+model User {
+  id                 String                   @id @default(cuid())
+  full_name          String
+  title              String
+  email              String                   @unique
+  password_hash      String
+  role_label         String
+  risk_profile_label String
+  created_at         DateTime                 @default(now())
+  updated_at         DateTime                 @updatedAt
+  memberships        OrganizationMembership[]
+  staff_profiles     StaffProfile[]
+  risk_profiles      RiskProfile[]
+  approvals          Approval[]
+  tasks              Task[]
+  conversations      Conversation[]
+  agent_memories     AgentMemory[]
+  audit_events       AuditEvent[]
+  workflow_runs      WorkflowRun[]
+
+  @@map("users")
+}
+
+model Role {
+  id              String                   @id @default(cuid())
+  organization_id String?
+  name            String
+  scope           String
+  permissions     String
+  created_at      DateTime                 @default(now())
+  updated_at      DateTime                 @updatedAt
+  organization    Organization?            @relation(fields: [organization_id], references: [id])
+  memberships     OrganizationMembership[]
+
+  @@map("roles")
+}
+
+model OrganizationMembership {
+  id              String       @id @default(cuid())
+  organization_id String
+  user_id         String
+  role_id         String
+  hierarchy_level Int
+  status          String
+  valid_from      DateTime?
+  valid_to        DateTime?
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  user            User         @relation(fields: [user_id], references: [id])
+  role            Role         @relation(fields: [role_id], references: [id])
+
+  @@unique([organization_id, user_id])
+  @@map("organization_memberships")
+}
+
+model StaffProfile {
+  id               String       @id @default(cuid())
+  organization_id  String
+  user_id          String
+  specialty        String
+  availability     String
+  escalation_route String
+  skills           String
+  created_at       DateTime     @default(now())
+  organization     Organization @relation(fields: [organization_id], references: [id])
+  user             User         @relation(fields: [user_id], references: [id])
+
+  @@unique([organization_id, user_id])
+  @@map("staff_profiles")
+}
+
+model WalletAccount {
+  id                String          @id @default(cuid())
+  organization_id   String
+  name              String
+  kind              String
+  currency          String
+  available_balance Int
+  pending_balance   Int
+  alias             String
+  created_at        DateTime        @default(now())
+  updated_at        DateTime        @updatedAt
+  organization      Organization    @relation(fields: [organization_id], references: [id])
+  ledger_accounts   LedgerAccount[]
+  money_transfers   MoneyTransfer[]
+
+  @@map("wallet_accounts")
+}
+
+model LedgerAccount {
+  id                String        @id @default(cuid())
+  organization_id   String
+  wallet_account_id String
+  code              String
+  name              String
+  kind              String
+  currency          String
+  created_at        DateTime      @default(now())
+  organization      Organization  @relation(fields: [organization_id], references: [id])
+  wallet_account    WalletAccount @relation(fields: [wallet_account_id], references: [id])
+  ledger_entries    LedgerEntry[]
+
+  @@unique([organization_id, code])
+  @@map("ledger_accounts")
+}
+
+model LedgerEntry {
+  id               String         @id @default(cuid())
+  organization_id  String
+  ledger_account_id String
+  money_transfer_id String?
+  amount           Int
+  direction        String
+  status           String
+  memo             String
+  created_at       DateTime       @default(now())
+  organization     Organization   @relation(fields: [organization_id], references: [id])
+  ledger_account   LedgerAccount  @relation(fields: [ledger_account_id], references: [id])
+  money_transfer   MoneyTransfer? @relation(fields: [money_transfer_id], references: [id])
+
+  @@index([organization_id, created_at])
+  @@map("ledger_entries")
+}
+
+model Beneficiary {
+  id               String         @id @default(cuid())
+  organization_id  String
+  name             String
+  bank             String
+  account_mask     String
+  beneficiary_type String
+  created_at       DateTime       @default(now())
+  organization     Organization   @relation(fields: [organization_id], references: [id])
+  money_transfers  MoneyTransfer[]
+
+  @@map("beneficiaries")
+}
+
+model ApprovalPolicy {
+  id                     String       @id @default(cuid())
+  organization_id        String
+  name                   String
+  action_type            String
+  threshold_amount       Int
+  requires_manual_review Boolean
+  created_at             DateTime     @default(now())
+  organization           Organization @relation(fields: [organization_id], references: [id])
+  approvals              Approval[]
+
+  @@map("approval_policies")
+}
+
+model Approval {
+  id              String         @id @default(cuid())
+  organization_id String
+  policy_id       String
+  requester_id    String
+  title           String
+  amount          Int
+  status          String
+  reason          String
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+  organization    Organization   @relation(fields: [organization_id], references: [id])
+  policy          ApprovalPolicy @relation(fields: [policy_id], references: [id])
+  requester       User           @relation(fields: [requester_id], references: [id])
+  money_transfer  MoneyTransfer?
+  order_intent    OrderIntent?
+
+  @@index([organization_id, status, created_at])
+  @@map("approvals")
+}
+
+model MoneyTransfer {
+  id                     String         @id @default(cuid())
+  organization_id        String
+  from_wallet_account_id String
+  beneficiary_id         String
+  approval_id            String?        @unique
+  amount                 Int
+  status                 String
+  concept                String
+  reference              String         @unique
+  created_at             DateTime       @default(now())
+  settled_at             DateTime?
+  organization           Organization   @relation(fields: [organization_id], references: [id])
+  from_wallet_account    WalletAccount  @relation(fields: [from_wallet_account_id], references: [id])
+  beneficiary            Beneficiary    @relation(fields: [beneficiary_id], references: [id])
+  approval               Approval?      @relation(fields: [approval_id], references: [id])
+  ledger_entries         LedgerEntry[]
+
+  @@index([organization_id, status, created_at])
+  @@map("money_transfers")
+}
+
+model Portfolio {
+  id                      String              @id @default(cuid())
+  organization_id         String
+  name                    String
+  benchmark               String
+  total_value             Int
+  cash_pct                Float
+  monthly_performance_pct Float
+  risk_band               String
+  created_at              DateTime            @default(now())
+  updated_at              DateTime            @updatedAt
+  organization            Organization        @relation(fields: [organization_id], references: [id])
+  positions               PortfolioPosition[]
+  order_intents           OrderIntent[]
+
+  @@map("portfolios")
+}
+
+model RiskProfile {
+  id              String       @id @default(cuid())
+  organization_id String
+  user_id         String
+  label           String
+  horizon         String
+  restrictions    String
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  user            User         @relation(fields: [user_id], references: [id])
+
+  @@unique([organization_id, user_id])
+  @@map("risk_profiles")
+}
+
+model BrokerConnector {
+  id                  String       @id @default(cuid())
+  organization_id     String
+  provider            String
+  status              String
+  external_account_id String
+  capabilities        String
+  created_at          DateTime     @default(now())
+  organization        Organization @relation(fields: [organization_id], references: [id])
+
+  @@map("broker_connectors")
+}
+
+model PortfolioPosition {
+  id           String    @id @default(cuid())
+  portfolio_id String
+  symbol       String
+  name         String
+  weight_pct   Float
+  market_value Int
+  pnl_pct      Float
+  thesis       String
+  as_of        DateTime  @default(now())
+  portfolio    Portfolio @relation(fields: [portfolio_id], references: [id])
+
+  @@index([portfolio_id, symbol, as_of])
+  @@map("portfolio_positions")
+}
+
+model OrderIntent {
+  id              String       @id @default(cuid())
+  organization_id String
+  portfolio_id    String
+  approval_id     String?      @unique
+  symbol          String
+  side            String
+  amount          Int
+  rationale       String
+  status          String
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  portfolio       Portfolio    @relation(fields: [portfolio_id], references: [id])
+  approval        Approval?    @relation(fields: [approval_id], references: [id])
+
+  @@index([organization_id, status, created_at])
+  @@map("order_intents")
+}
+
+model ChannelWhatsapp {
+  id                 String       @id @default(cuid())
+  organization_id    String
+  phone_number       String
+  status             String
+  webhook_status     String
+  template_namespace String
+  created_at         DateTime     @default(now())
+  organization       Organization @relation(fields: [organization_id], references: [id])
+
+  @@map("channels_whatsapp")
+}
+
+model Conversation {
+  id                String       @id @default(cuid())
+  organization_id   String
+  user_id           String?
+  channel           String
+  owner             String
+  predominant_agent String
+  created_at        DateTime     @default(now())
+  organization      Organization @relation(fields: [organization_id], references: [id])
+  user              User?        @relation(fields: [user_id], references: [id])
+  messages          Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id              String       @id @default(cuid())
+  conversation_id String
+  actor           String
+  direction       String
+  raw_payload     String
+  normalized_text String
+  intent          String
+  created_at      DateTime     @default(now())
+  conversation    Conversation @relation(fields: [conversation_id], references: [id])
+
+  @@index([conversation_id, created_at])
+  @@map("messages")
+}
+
+model AgentMemory {
+  id                String       @id @default(cuid())
+  organization_id   String
+  user_id           String?
+  fact_type         String
+  content           String
+  confidence        Float
+  source_message_id String?
+  created_at        DateTime     @default(now())
+  organization      Organization @relation(fields: [organization_id], references: [id])
+  user              User?        @relation(fields: [user_id], references: [id])
+
+  @@map("agent_memory")
+}
+
+model Task {
+  id              String       @id @default(cuid())
+  organization_id String
+  owner_id        String
+  title           String
+  lane            String
+  status          String
+  due_at          DateTime
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  owner           User         @relation(fields: [owner_id], references: [id])
+
+  @@index([organization_id, status, due_at])
+  @@map("tasks")
+}
+
+model Reminder {
+  id              String       @id @default(cuid())
+  organization_id String
+  title           String
+  channel         String
+  status          String
+  due_at          DateTime
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id])
+
+  @@index([organization_id, status, due_at])
+  @@map("reminders")
+}
+
+model Event {
+  id              String       @id @default(cuid())
+  organization_id String
+  entity_type     String
+  entity_id       String
+  label           String
+  summary         String
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id])
+
+  @@map("events")
+}
+
+model ProviderWebhook {
+  id                String       @id @default(cuid())
+  organization_id   String
+  provider          String
+  event_type        String
+  payload           String
+  processing_status String
+  created_at        DateTime     @default(now())
+  organization      Organization @relation(fields: [organization_id], references: [id])
+
+  @@map("provider_webhooks")
+}
+
+model IntegrationOutbox {
+  id              String       @id @default(cuid())
+  organization_id String
+  topic           String
+  payload         String
+  status          String
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id])
+
+  @@map("integration_outbox")
+}
+
+model AuditEvent {
+  id              String       @id @default(cuid())
+  organization_id String
+  actor_id        String?
+  action          String
+  resource_type   String
+  resource_id     String?
+  channel         String
+  summary         String
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  actor           User?        @relation(fields: [actor_id], references: [id])
+
+  @@index([organization_id, action, created_at])
+  @@map("audit_events")
+}
+
+model WorkflowRun {
+  id              String       @id @default(cuid())
+  organization_id String
+  owner_id        String?
+  name            String
+  state           String
+  created_at      DateTime     @default(now())
+  organization    Organization @relation(fields: [organization_id], references: [id])
+  owner           User?        @relation(fields: [owner_id], references: [id])
+
+  @@map("workflow_runs")
+}

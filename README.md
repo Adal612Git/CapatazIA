@@ -1,6 +1,6 @@
 # Capataz AI
 
-Sistema operativo para agencias automotrices con dashboard web, laboratorio de WhatsApp, reportes IA y superficies de junta diaria, campana y post-venta.
+Sistema operativo unificado para demo con dashboard web, simulador de WhatsApp, capa fintech laboral y app movil Expo conectados al mismo runtime.
 
 ## Stack actual
 
@@ -8,6 +8,7 @@ Sistema operativo para agencias automotrices con dashboard web, laboratorio de W
 - React 19
 - Zustand
 - API routes internas para chat, runtime, health y WhatsApp
+- APIs moviles para auth, bundle de sesion y solicitudes fintech
 - Gemini opcional
 - Runtime persistido en archivo local
 
@@ -24,8 +25,10 @@ Si configuras Supabase, el runtime deja de depender del archivo local y se vuelv
 - `app/`: superficies web y rutas API
 - `components/`: shell, tableros, laboratorio y vistas operativas
 - `lib/`: dominio operativo, permisos, store, semillas y runtime
+- `CapatazFintech/`: app Expo consumiendo el backend compartido
 - `data/`: persistencia local del runtime
 - `tests/`: smoke checks mínimos del entorno técnico
+- `DocumentacionConsolidada/`: carpeta única con documentación fuente y guías nuevas
 
 ## Variables de entorno
 
@@ -50,6 +53,7 @@ Variables principales:
 - `GEMINI_API_KEY`: llave para respuestas libres
 - `GEMINI_MODEL`: modelo Gemini
 - `CRON_SECRET`: reserva para jobs programados
+- `EXPO_PUBLIC_CAPATAZ_API_BASE_URL`: base URL remota para la app Expo cuando no use host local
 
 También se dejan variables reservadas para la arquitectura objetivo del plan original:
 
@@ -103,6 +107,7 @@ Usuarios sugeridos:
 
 - login por rol
 - dashboard ejecutivo
+- fintech laboral con score, saldo, solicitudes e insights
 - tareas
 - kanban
 - junta diaria
@@ -114,6 +119,7 @@ Usuarios sugeridos:
 - score
 - laboratorio WhatsApp mock/cloud-ready
 - settings con broadcasts programados
+- app Expo conectada al mismo backend para demo Android
 
 ## Endpoints operativos
 
@@ -121,6 +127,9 @@ Usuarios sugeridos:
 - `GET /api/cron/broadcasts`: tick manual/protegido para automatizaciones y broadcasts
 - `GET|PUT /api/capataz/runtime`: sync del runtime compartido
 - `GET|POST /api/capataz/chat`: laboratorio conversacional
+- `POST /api/mobile/auth`: login móvil demo
+- `GET /api/mobile/session`: bundle móvil con tareas, score, alertas y fintech
+- `POST /api/mobile/credit/apply`: solicitud fintech desde la app Expo
 - `POST /api/capataz/broadcasts/:id/run`: disparar broadcast programado
 - `GET|POST /api/whatsapp/webhook`: webhook de Meta
 - `POST /api/whatsapp/outbound`: salida WhatsApp
@@ -185,6 +194,7 @@ Ahora sí ya hay camino viable para Vercel:
 5. Verifica:
    - `/api/health`
    - `/whatsapp`
+   - `/fintech`
    - `/settings`
 
 Notas:
@@ -200,6 +210,8 @@ Ya cubierto en esta base:
 
 - dashboard operativo
 - canal WhatsApp mock
+- capa fintech laboral integrada al score operativo
+- app movil consumiendo runtime compartido
 - webhook cloud-ready
 - IA opcional
 - broadcasts internos

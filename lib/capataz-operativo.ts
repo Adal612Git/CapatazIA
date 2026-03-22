@@ -33,7 +33,20 @@ import {
   hydrateTestDrives,
   hydrateUsers,
 } from "@/lib/runtime-hydration";
-import { seedData } from "@/lib/seed-data";
+import { getAppSeed } from "@/lib/app-seeds";
+import {
+  findCopilotGuidesForQuery,
+  getAccessibleCopilotModuleGuides,
+  getCopilotGuideForPath,
+} from "@/lib/copilot";
+import { getDomainConfig } from "@/lib/domain-config";
+import {
+  formatFinanceMoney,
+  getFinanceProductsForUser,
+  getUserFinanceAccounts,
+  getUserFinanceApplications,
+  getUserFinanceMovements,
+} from "@/lib/fintech";
 import { loadRuntimeSnapshot, persistRuntimeSnapshot } from "@/lib/runtime-storage";
 import { getWhatsAppProvider, sendWhatsAppText } from "@/lib/channels/whatsapp";
 import type {
@@ -42,6 +55,10 @@ import type {
   ChecklistInstance,
   CreditFile,
   BroadcastAudience,
+  FinanceAccount,
+  FinanceApplication,
+  FinanceInsight,
+  FinanceMovement,
   Prospect,
   Priority,
   RuntimeSyncPayload,
@@ -52,10 +69,16 @@ import type {
   User,
   BellIncident,
   PostSaleFollowUp,
+  SystemMode,
 } from "@/lib/types";
 
-export type CapatazChannel = "mock_whatsapp" | "whatsapp_cloud";
+export type CapatazChannel = "mock_whatsapp" | "whatsapp_cloud" | "dashboard_copilot";
 export type ReportKind = "general" | "daily_closure" | "blockers" | "team_member";
+
+interface AssistantSurfaceContext {
+  currentPath?: string | null;
+  surface?: "whatsapp" | "dashboard_copilot";
+}
 
 export interface PublicCollaboratorContact {
   userId: string;
@@ -93,6 +116,9 @@ export interface OperationalExtraction {
   suggestedDueAt: string | null;
   suggestedLocation: string | null;
   wantsSuggestions: boolean;
+  confidence: "low" | "medium" | "high";
+  needsClarification: boolean;
+  clarifyingQuestion: string | null;
 }
 
 export interface GeneratedReport {
@@ -148,12 +174,19 @@ interface RuntimeState {
   bellIncidents: BellIncident[];
   postSaleFollowUps: PostSaleFollowUp[];
   scheduledBroadcasts: ScheduledBroadcast[];
+  financeAccounts: FinanceAccount[];
+  financeMovements: FinanceMovement[];
+  financeApplications: FinanceApplication[];
+  financeInsights: FinanceInsight[];
+  scoreSnapshots: RuntimeSyncPayload["scoreSnapshots"];
+  weekly: RuntimeSyncPayload["weekly"];
   reports: GeneratedReport[];
   notes: OperationalNote[];
   suggestions: OperationalSuggestion[];
 }
 
 interface RuntimeEnvelope {
+  systemMode: SystemMode;
   state: RuntimeState;
   threads: Record<string, ConversationThread>;
 }
@@ -191,13 +224,51 @@ const extractionSchema = z.object({
   suggestedDueAt: z.string().nullable(),
   suggestedLocation: z.string().nullable(),
   wantsSuggestions: z.boolean().default(false),
+  confidence: z.enum(["low", "medium", "high"]).default("medium"),
+  needsClarification: z.boolean().default(false),
+  clarifyingQuestion: z.string().nullable().default(null),
 });
 
-let runtimeCache: RuntimeEnvelope | null = null;
-let runtimeLoadPromise: Promise<RuntimeEnvelope> | null = null;
+const replyPlanSchema = z.object({
+  opening: z.string(),
+  operationalRead: z.string().nullable().default(null),
+  nextSteps: z.array(z.string()).default([]),
+  risk: z.string().nullable().default(null),
+  close: z.string().nullable().default(null),
+});
+
+const runtimeCacheByMode = new Map<SystemMode, RuntimeEnvelope>();
+const runtimeLoadPromiseByMode = new Map<SystemMode, Promise<RuntimeEnvelope>>();
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function withExtractionDefaults(extraction: Partial<OperationalExtraction>): OperationalExtraction {
+  return {
+    intent: extraction.intent ?? "free_text",
+    summary: extraction.summary ?? "",
+    detectedTasks: extraction.detectedTasks ?? [],
+    blockers: extraction.blockers ?? [],
+    followUps: extraction.followUps ?? [],
+    requestedReport: extraction.requestedReport ?? null,
+    targetUserName: extraction.targetUserName ?? null,
+    note: extraction.note ?? null,
+    suggestedTaskTitle: extraction.suggestedTaskTitle ?? null,
+    suggestedTaskDescription: extraction.suggestedTaskDescription ?? null,
+    suggestedAssigneeName: extraction.suggestedAssigneeName ?? null,
+    suggestedPriority: extraction.suggestedPriority ?? null,
+    suggestedDueAt: extraction.suggestedDueAt ?? null,
+    suggestedLocation: extraction.suggestedLocation ?? null,
+    wantsSuggestions: extraction.wantsSuggestions ?? false,
+    confidence: extraction.confidence ?? "medium",
+    needsClarification: extraction.needsClarification ?? false,
+    clarifyingQuestion: extraction.clarifyingQuestion ?? null,
+  };
+}
+
+function getSeedForMode(systemMode: SystemMode) {
+  return getAppSeed(systemMode);
 }
 
 function normalizePhone(phone: string) {
@@ -334,6 +405,7 @@ function summarizeTopTasks(tasks: Task[]) {
 
 function buildPersonalizedReminder(runtime: RuntimeEnvelope, user: User) {
   const persona = getAssistantPersonaForUserId(user.id);
+  const domain = getDomainConfig(runtime.systemMode);
   const visibleTasks = getVisibleTasks(runtime, user);
   const openTasks = visibleTasks.filter((task) => task.columnId !== "done");
   const blockedTasks = openTasks.filter((task) => task.columnId === "blocked");
@@ -347,19 +419,19 @@ function buildPersonalizedReminder(runtime: RuntimeEnvelope, user: User) {
 
   const greetingByRole: Record<User["role"], string> = {
     admin: "Vista general de grupo",
-    owner: "Corte ejecutivo de agencia",
+    owner: runtime.systemMode === "hospital" ? "Corte ejecutivo del hospital" : "Corte ejecutivo de agencia",
     supervisor: "Empuje de junta y seguimiento",
     operator: "Enfoque operativo de hoy",
   };
 
   const roleSpecificLine =
     user.role === "operator"
-      ? `Traes ${openTasks.length} pendientes abiertos, ${blockedTasks.length} bloqueados y ${postSale.length} seguimientos post-venta vivos.`
+      ? `Traes ${openTasks.length} pendientes abiertos, ${blockedTasks.length} bloqueados y ${postSale.length} ${domain.followUpPlural} vivos.`
       : user.role === "supervisor"
-        ? `Tu equipo visible trae ${openTasks.length} tareas abiertas, ${blockedTasks.length} bloqueos y ${prospects.length} prospectos que requieren empuje.`
+        ? `Tu equipo visible trae ${openTasks.length} tareas abiertas, ${blockedTasks.length} bloqueos y ${prospects.length} ${domain.leadPlural} que requieren empuje.`
         : user.role === "owner"
-          ? `Tu agencia trae ${operations.length} operaciones vivas, ${incidents.length} campanas abiertas y ${overdueTasks.length} tareas vencidas.`
-          : `Grupo completo: ${openTasks.length} tareas abiertas, ${blockedTasks.length} bloqueadas, ${operations.length} operaciones activas y ${incidents.length} campanas por resolver.`;
+          ? `Tu ${domain.primaryUnitLabel} trae ${operations.length} ${domain.operationPlural} vivas, ${incidents.length} ${domain.incidentPlural} abiertas y ${overdueTasks.length} tareas vencidas.`
+          : `Grupo completo: ${openTasks.length} tareas abiertas, ${blockedTasks.length} bloqueadas, ${operations.length} ${domain.operationPlural} activas y ${incidents.length} ${domain.incidentPlural} por resolver.`;
 
   const nextMove =
     blockedTasks[0]?.title
@@ -367,7 +439,7 @@ function buildPersonalizedReminder(runtime: RuntimeEnvelope, user: User) {
       : openTasks[0]?.title
         ? `Prioridad IA: mueve hoy "${openTasks[0].title}" para que no se enfrie la operacion.`
         : prospects[0]?.customerName
-          ? `Prioridad IA: empuja el seguimiento de ${prospects[0].customerName} para no perder ritmo comercial.`
+          ? `Prioridad IA: empuja el seguimiento de ${prospects[0].customerName} para no perder ritmo operativo.`
           : "Prioridad IA: mantente disponible para apoyar cierres, incidencias y seguimiento fino del equipo.";
 
   return [
@@ -400,8 +472,8 @@ function collectUserSnapshotMetrics(runtime: RuntimeEnvelope, user: User) {
   };
 }
 
-function buildReminderChartUrl(userId: string) {
-  return `/api/charts/user-summary?userId=${encodeURIComponent(userId)}&ts=${Date.now()}`;
+function buildReminderChartUrl(userId: string, systemMode: SystemMode) {
+  return `/api/charts/user-summary?userId=${encodeURIComponent(userId)}&systemMode=${encodeURIComponent(systemMode)}&ts=${Date.now()}`;
 }
 
 function chartBar(x: number, y: number, width: number, height: number, fill: string, label: string, value: number) {
@@ -412,8 +484,8 @@ function chartBar(x: number, y: number, width: number, height: number, fill: str
   ].join("");
 }
 
-export async function generateUserSummaryChartSvg(userId: string) {
-  const runtime = await refreshRuntime();
+export async function generateUserSummaryChartSvg(userId: string, systemMode: SystemMode = "automotive") {
+  const runtime = await refreshRuntime(systemMode);
   const user = runtime.state.users.find((entry) => entry.id === userId);
   if (!user) {
     return null;
@@ -457,21 +529,28 @@ export async function generateUserSummaryChartSvg(userId: string) {
   `.trim();
 }
 
-function cloneSeedState(): RuntimeState {
+function cloneSeedState(systemMode: SystemMode): RuntimeState {
+  const seed = getSeedForMode(systemMode);
   return JSON.parse(
     JSON.stringify({
-      users: seedData.users,
-      tasks: seedData.tasks,
-      checklists: seedData.checklists,
-      alerts: seedData.alerts,
-      activity: seedData.activity,
-      prospects: seedData.prospects,
-      testDrives: seedData.testDrives,
-      salesOperations: seedData.salesOperations,
-      creditFiles: seedData.creditFiles,
-      bellIncidents: seedData.bellIncidents,
-      postSaleFollowUps: seedData.postSaleFollowUps,
-      scheduledBroadcasts: seedData.scheduledBroadcasts,
+      users: seed.users,
+      tasks: seed.tasks,
+      checklists: seed.checklists,
+      alerts: seed.alerts,
+      activity: seed.activity,
+      prospects: seed.prospects,
+      testDrives: seed.testDrives,
+      salesOperations: seed.salesOperations,
+      creditFiles: seed.creditFiles,
+      bellIncidents: seed.bellIncidents,
+      postSaleFollowUps: seed.postSaleFollowUps,
+      scheduledBroadcasts: seed.scheduledBroadcasts,
+      financeAccounts: seed.financeAccounts,
+      financeMovements: seed.financeMovements,
+      financeApplications: seed.financeApplications,
+      financeInsights: seed.financeInsights,
+      scoreSnapshots: seed.scoreSnapshots,
+      weekly: seed.weekly,
       reports: [],
       notes: [],
       suggestions: [],
@@ -479,9 +558,10 @@ function cloneSeedState(): RuntimeState {
   ) as RuntimeState;
 }
 
-function createSeedRuntime(): RuntimeEnvelope {
+function createSeedRuntime(systemMode: SystemMode = "automotive"): RuntimeEnvelope {
   return {
-    state: cloneSeedState(),
+    systemMode,
+    state: cloneSeedState(systemMode),
     threads: {},
   };
 }
@@ -497,7 +577,7 @@ function seedDemoThread(
   options: {
     phone: string;
     report?: GeneratedReport;
-    analysis?: OperationalExtraction;
+    analysis?: Partial<OperationalExtraction>;
     messages: Array<Pick<ConversationMessage, "role" | "text">>;
     note?: OperationalNote;
     suggestion?: OperationalSuggestion;
@@ -520,7 +600,7 @@ function seedDemoThread(
   });
 
   thread.messages = seededMessages;
-  thread.latestAnalysis = options.analysis ?? null;
+  thread.latestAnalysis = options.analysis ? withExtractionDefaults(options.analysis) : null;
   thread.latestReport = options.report ?? null;
 
   if (options.report) {
@@ -541,6 +621,10 @@ function findRuntimeUser(runtime: RuntimeEnvelope, identifiers: string[]) {
   return (
     runtime.state.users.find((user) => normalized.has(user.id.toLowerCase()) || normalized.has(user.email.toLowerCase())) ?? null
   );
+}
+
+function getPrimaryAdminUserId(runtime: RuntimeEnvelope) {
+  return runtime.state.users.find((user) => user.role === "admin")?.id ?? runtime.state.users[0]?.id ?? "system";
 }
 
 function ensureSeedThreads(runtime: RuntimeEnvelope) {
@@ -884,47 +968,62 @@ function ensureSeedThreads(runtime: RuntimeEnvelope) {
   return changed;
 }
 
-async function persistRuntime() {
-  if (!runtimeCache) {
+async function persistRuntime(systemMode: SystemMode = "automotive") {
+  const runtime = runtimeCacheByMode.get(systemMode);
+  if (!runtime) {
     return;
   }
 
-  await persistRuntimeSnapshot(runtimeCache);
+  await persistRuntimeSnapshot(runtime, systemMode);
 }
 
-async function loadRuntimeFromDisk() {
+async function loadRuntimeFromDisk(systemMode: SystemMode = "automotive") {
   try {
-    const parsed = await loadRuntimeSnapshot<RuntimeEnvelope>();
+    const parsed = await loadRuntimeSnapshot<RuntimeEnvelope>(systemMode);
     if (!parsed) {
-      const seedRuntime = createSeedRuntime();
+      const seedRuntime = createSeedRuntime(systemMode);
       ensureSeedThreads(seedRuntime);
-      await persistRuntimeSnapshot(seedRuntime);
+      await persistRuntimeSnapshot(seedRuntime, systemMode);
       return seedRuntime;
     }
     const legacyTaskTitle = parsed.state?.tasks?.[0]?.title ?? "";
     if (legacyTaskTitle.includes("Inspeccion de tablero electrico") || legacyTaskTitle.includes("Entrega de material a cuadrilla")) {
-      return createSeedRuntime();
+      return createSeedRuntime(systemMode);
     }
-    parsed.state.users = hydrateUsers(parsed.state.users ?? seedData.users);
-    parsed.state.prospects = hydrateProspects(parsed.state.prospects ?? seedData.prospects);
-    parsed.state.testDrives = hydrateTestDrives(parsed.state.testDrives ?? seedData.testDrives);
-    parsed.state.salesOperations = hydrateSalesOperations(parsed.state.salesOperations ?? seedData.salesOperations);
-    parsed.state.creditFiles = hydrateCreditFiles(parsed.state.creditFiles ?? seedData.creditFiles);
-    parsed.state.bellIncidents = hydrateBellIncidents(parsed.state.bellIncidents ?? seedData.bellIncidents);
-    parsed.state.postSaleFollowUps = hydratePostSaleFollowUps(parsed.state.postSaleFollowUps ?? seedData.postSaleFollowUps);
-    parsed.state.scheduledBroadcasts = hydrateScheduledBroadcasts(parsed.state.scheduledBroadcasts ?? seedData.scheduledBroadcasts);
+    parsed.systemMode = systemMode;
+    const seed = getSeedForMode(parsed.systemMode);
+    parsed.state.users = hydrateUsers(parsed.state.users ?? seed.users, parsed.systemMode);
+    parsed.state.prospects = hydrateProspects(parsed.state.prospects ?? seed.prospects, parsed.systemMode);
+    parsed.state.testDrives = hydrateTestDrives(parsed.state.testDrives ?? seed.testDrives, parsed.systemMode);
+    parsed.state.salesOperations = hydrateSalesOperations(parsed.state.salesOperations ?? seed.salesOperations, parsed.systemMode);
+    parsed.state.creditFiles = hydrateCreditFiles(parsed.state.creditFiles ?? seed.creditFiles, parsed.systemMode);
+    parsed.state.bellIncidents = hydrateBellIncidents(parsed.state.bellIncidents ?? seed.bellIncidents, parsed.systemMode);
+    parsed.state.postSaleFollowUps = hydratePostSaleFollowUps(
+      parsed.state.postSaleFollowUps ?? seed.postSaleFollowUps,
+      parsed.systemMode,
+    );
+    parsed.state.scheduledBroadcasts = hydrateScheduledBroadcasts(
+      parsed.state.scheduledBroadcasts ?? seed.scheduledBroadcasts,
+      parsed.systemMode,
+    );
+    parsed.state.financeAccounts ??= seed.financeAccounts;
+    parsed.state.financeMovements ??= seed.financeMovements;
+    parsed.state.financeApplications ??= seed.financeApplications;
+    parsed.state.financeInsights ??= seed.financeInsights;
+    parsed.state.scoreSnapshots ??= seed.scoreSnapshots;
+    parsed.state.weekly ??= seed.weekly;
     parsed.state.reports ??= [];
     parsed.state.notes ??= [];
     parsed.state.suggestions ??= [];
     parsed.threads ??= {};
     if (ensureSeedThreads(parsed)) {
-      await persistRuntimeSnapshot(parsed);
+      await persistRuntimeSnapshot(parsed, systemMode);
     }
     return parsed;
   } catch {
-    const seedRuntime = createSeedRuntime();
+    const seedRuntime = createSeedRuntime(systemMode);
     ensureSeedThreads(seedRuntime);
-    await persistRuntimeSnapshot(seedRuntime);
+    await persistRuntimeSnapshot(seedRuntime, systemMode);
     return seedRuntime;
   }
 }
@@ -941,7 +1040,7 @@ function runScheduledBroadcast(runtime: RuntimeEnvelope, broadcast: ScheduledBro
   runtime.state.scheduledBroadcasts = runtime.state.scheduledBroadcasts.map((entry) =>
     entry.id === broadcast.id ? { ...entry, lastSentOn: dateKey } : entry,
   );
-  appendActivity(runtime, "usr-admin", `Broadcast programado enviado: ${broadcast.title}`);
+  appendActivity(runtime, getPrimaryAdminUserId(runtime), `Broadcast programado enviado: ${broadcast.title}`);
 
   return recipients.length;
 }
@@ -970,36 +1069,45 @@ function applyScheduledBroadcasts(runtime: RuntimeEnvelope, now = new Date()) {
   return changed;
 }
 
-async function ensureRuntime() {
-  if (runtimeCache) {
-    return runtimeCache;
+async function ensureRuntime(systemMode: SystemMode = "automotive") {
+  const cachedRuntime = runtimeCacheByMode.get(systemMode);
+  if (cachedRuntime) {
+    return cachedRuntime;
   }
 
-  if (!runtimeLoadPromise) {
-    runtimeLoadPromise = loadRuntimeFromDisk().then((runtime) => {
-      runtimeCache = runtime;
+  const pendingLoad = runtimeLoadPromiseByMode.get(systemMode);
+  if (!pendingLoad) {
+    const nextLoad = loadRuntimeFromDisk(systemMode).then((runtime) => {
+      runtimeCacheByMode.set(systemMode, runtime);
+      runtimeLoadPromiseByMode.delete(systemMode);
       return runtime;
     });
+    runtimeLoadPromiseByMode.set(systemMode, nextLoad);
+    return nextLoad;
   }
 
-  return runtimeLoadPromise;
+  return pendingLoad;
 }
 
-async function refreshRuntime() {
-  const runtime = await ensureRuntime();
+async function refreshRuntime(systemMode: SystemMode = "automotive") {
+  const runtime = await ensureRuntime(systemMode);
   if (applyScheduledBroadcasts(runtime)) {
-    await persistRuntime();
+    await persistRuntime(systemMode);
   }
   return runtime;
 }
 
-function getThreadKey(phone: string, channel: CapatazChannel) {
-  return `${channel}:${normalizePhone(phone)}`;
+function getThreadKey(identifier: string, channel: CapatazChannel) {
+  return channel === "dashboard_copilot" ? `${channel}:${identifier}` : `${channel}:${normalizePhone(identifier)}`;
 }
 
 function getUserByPhone(runtime: RuntimeEnvelope, phone: string) {
   const normalized = normalizePhone(phone);
   return runtime.state.users.find((user) => normalizePhone(user.phone ?? "") === normalized) ?? null;
+}
+
+function getUserById(runtime: RuntimeEnvelope, userId: string) {
+  return runtime.state.users.find((user) => user.id === userId) ?? null;
 }
 
 function getVisibleTasks(runtime: RuntimeEnvelope, user: User) {
@@ -1257,6 +1365,7 @@ function collectMetrics(runtime: RuntimeEnvelope, viewer?: User | null) {
 }
 
 function summarizeBusiness(runtime: RuntimeEnvelope, viewer?: User | null) {
+  const domain = getDomainConfig(runtime.systemMode);
   const metrics = collectMetrics(runtime, viewer);
   return [
     "Resumen operativo actual:",
@@ -1264,21 +1373,26 @@ function summarizeBusiness(runtime: RuntimeEnvelope, viewer?: User | null) {
     `- bloqueadas: ${metrics.blockedTasks.length}`,
     `- vencidas: ${metrics.overdueTasks.length}`,
     `- alertas sin leer: ${metrics.unreadAlerts.length}`,
-    `- prospectos vivos: ${metrics.activeProspects.length}`,
-    `- pruebas agendadas: ${metrics.scheduledTestDrives.length}`,
-    `- operaciones vivas: ${metrics.activeOperations.length}`,
-    `- listas para cierre: ${metrics.readyToCloseOperations.length}`,
-    `- expedientes incompletos: ${metrics.creditFilesMissing.length}`,
-    `- campanas abiertas: ${metrics.openIncidents.length}`,
-    `- post-venta en riesgo: ${metrics.atRiskPostSale.length}`,
+    `- ${domain.leadPlural} vivas: ${metrics.activeProspects.length}`,
+    `- ${domain.testDrivePlural} agendadas: ${metrics.scheduledTestDrives.length}`,
+    `- ${domain.operationPlural} vivas: ${metrics.activeOperations.length}`,
+    `- listas: ${metrics.readyToCloseOperations.length}`,
+    `- ${domain.creditPlural} incompletas: ${metrics.creditFilesMissing.length}`,
+    `- ${domain.incidentPlural} abiertas: ${metrics.openIncidents.length}`,
+    `- ${domain.postSaleLabel.toLowerCase()} en riesgo: ${metrics.atRiskPostSale.length}`,
   ].join("\n");
 }
 
-function helpMessage(user: User) {
+function helpMessage(runtime: RuntimeEnvelope, user: User) {
+  const domain = getDomainConfig(runtime.systemMode);
   const base = [
     `Hola ${user.name.split(" ")[0]}.`,
     "Puedo ayudarte con tareas, memoria y reportes:",
     "- mis tareas",
+    "- mi saldo",
+    "- mis movimientos",
+    "- mis solicitudes",
+    "- solicitar adelanto 2500",
     "- crea tarea programar prueba de manejo para jetta con diego manana",
     "- nota cliente molesto por entrega tardia de unidad",
     "- bloquear tsk-1 falta autorizacion de descuento",
@@ -1289,25 +1403,31 @@ function helpMessage(user: User) {
     "- reporte bloqueos",
     "- reporte cierre",
     "- sugerencias",
+    "- donde veo alertas",
+    "- como creo una tarea",
   ];
 
   if (isSalesUser(user)) {
-    base.push("- mis prospectos");
-    base.push("- crear prospecto mario cazares | taos highline");
-    base.push("- agendar prueba prs-1");
-    base.push("- completar prueba td-1");
+    base.push(runtime.systemMode === "hospital" ? "- mis ingresos" : "- mis prospectos");
+    base.push(runtime.systemMode === "hospital" ? "- crear ingreso maria lopez | resonancia con contraste" : "- crear prospecto mario cazares | taos highline");
+    base.push(runtime.systemMode === "hospital" ? "- agendar prueba prs-1" : "- agendar prueba prs-1");
+    base.push(runtime.systemMode === "hospital" ? "- completar prueba td-1" : "- completar prueba td-1");
     base.push("- abrir operacion prs-1");
     base.push("- operaciones");
     base.push("- expediente op-1");
-    base.push("- expedientes");
+    base.push(runtime.systemMode === "hospital" ? "- autorizaciones" : "- expedientes");
     base.push("- enviar expediente cf-1");
-    base.push("- aprobar expediente cf-1");
-    base.push("- mis seguimientos");
+    base.push(runtime.systemMode === "hospital" ? "- aprobar expediente cf-1" : "- aprobar expediente cf-1");
+    base.push(runtime.systemMode === "hospital" ? "- mis seguimientos de alta" : "- mis seguimientos");
     base.push("- contactar seguimiento psf-1");
     base.push("- cerrar seguimiento psf-1");
   }
 
-  base.push("- levantar campana Juan Perez | servicio | cliente molesto por entrega");
+  base.push(
+    runtime.systemMode === "hospital"
+      ? "- levantar campana Juan Perez | servicio | paciente molesto por demora en traslado"
+      : "- levantar campana Juan Perez | servicio | cliente molesto por entrega",
+  );
   base.push("- tomar campana inc-1");
   base.push("- resolver campana inc-1 | se atendio y se ofrecio solucion");
 
@@ -1316,6 +1436,121 @@ function helpMessage(user: User) {
   }
 
   return base.join("\n");
+}
+
+function buildCurrentModuleReply(runtime: RuntimeEnvelope, user: User, currentPath?: string | null) {
+  const guide = getCopilotGuideForPath(runtime.systemMode, currentPath, user);
+  if (!guide) {
+    const accessible = getAccessibleCopilotModuleGuides(runtime.systemMode, user).slice(0, 4);
+    if (!accessible.length) {
+      return "Todavia no ubico bien tu pantalla actual, pero si me dices que quieres lograr te digo exactamente a donde entrar y con que empezar.";
+    }
+    return [
+      "Todavia no ubique una pantalla exacta, pero no estas a ciegas.",
+      "Por tu perfil, estos son los modulos que mas te sirven ahorita:",
+      ...accessible.map((entry) => `- ${entry.title} (${entry.href}): ${entry.summary}`),
+      "Si me dices tu objetivo, te lo bajo a clics concretos.",
+    ].join("\n");
+  }
+
+  return [
+    `Claro. Ahorita estas en ${guide.title} (${guide.href}).`,
+    `Este modulo te sirve para ${guide.summary.charAt(0).toLowerCase()}${guide.summary.slice(1)}`,
+    "Lo mas util que puedes hacer aqui es:",
+    ...guide.actions.map((action) => `- ${action}`),
+    "Si me dices que quieres lograr, te digo el siguiente clic o el comando exacto.",
+  ].join("\n");
+}
+
+function buildRouteGuidanceReply(
+  runtime: RuntimeEnvelope,
+  user: User,
+  message: string,
+  currentPath?: string | null,
+) {
+  const matches = findCopilotGuidesForQuery(runtime.systemMode, message, user);
+  const currentGuide = getCopilotGuideForPath(runtime.systemMode, currentPath, user);
+
+  if (!matches.length) {
+    return currentGuide ? buildCurrentModuleReply(runtime, user, currentPath) : null;
+  }
+
+  const primary = matches[0];
+  const alternatives = matches.filter((entry) => entry.key !== primary.key).slice(0, 2);
+
+  return [
+    `Sí, para eso te conviene entrar a ${primary.title} (${primary.href}).`,
+    `Te mando ahi porque ${primary.summary.charAt(0).toLowerCase()}${primary.summary.slice(1)}`,
+    "Cuando abras esa pantalla, arranca con esto:",
+    ...primary.actions.map((action) => `- ${action}`),
+    alternatives.length ? "Tambien te pueden servir:" : null,
+    ...alternatives.map((entry) => `- ${entry.title} (${entry.href})`),
+    currentGuide && currentGuide.key !== primary.key ? `Ahorita estas en ${currentGuide.title} (${currentGuide.href}), por eso no lo veias todavia.` : null,
+    "Si quieres, tambien te digo que boton tocar primero cuando entres.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildRecentConversationContext(thread?: ConversationThread | null) {
+  if (!thread?.messages.length) {
+    return [];
+  }
+
+  return thread.messages.slice(-6).map((entry) => ({
+    role: entry.role,
+    text: entry.text,
+    createdAt: entry.createdAt,
+  }));
+}
+
+function buildVisibleUsersDigest(runtime: RuntimeEnvelope, user: User) {
+  return runtime.state.users
+    .filter((candidate) => canViewUserProfile(user, candidate))
+    .slice(0, 8)
+    .map((candidate) => ({
+      name: candidate.name,
+      role: candidate.role,
+      site: candidate.site,
+      email: candidate.email,
+    }));
+}
+
+function buildFinanceContext(runtime: RuntimeEnvelope, user: User) {
+  const accounts = getUserFinanceAccounts(user.id, runtime.state.financeAccounts).slice(0, 4);
+  const movements = getUserFinanceMovements(user.id, runtime.state.financeMovements).slice(0, 4);
+  const applications = getUserFinanceApplications(user.id, runtime.state.financeApplications).slice(0, 3);
+  const score = runtime.state.scoreSnapshots.find((entry) => entry.userId === user.id) ?? null;
+
+  return {
+    score: score
+      ? {
+          value: score.score,
+          trend: score.trend,
+          note: score.note,
+        }
+      : null,
+    accounts: accounts.map((account) => ({
+      label: account.label,
+      kind: account.kind,
+      available: account.availableBalance,
+      pending: account.pendingBalance,
+      limit: account.creditLimit ?? null,
+    })),
+    latestMovements: movements.map((movement) => ({
+      title: movement.title,
+      amount: movement.amount,
+      type: movement.type,
+      status: movement.status,
+      createdAt: movement.createdAt,
+    })),
+    applications: applications.map((application) => ({
+      productName: application.productName,
+      requestedAmount: application.requestedAmount,
+      status: application.status,
+      updatedAt: application.updatedAt,
+    })),
+  };
 }
 
 function summarizeTasksForUser(runtime: RuntimeEnvelope, user: User) {
@@ -1383,9 +1618,10 @@ function summarizeCreditFilesForUser(runtime: RuntimeEnvelope, user: User) {
 }
 
 function summarizeIncidentsForUser(runtime: RuntimeEnvelope, user: User) {
+  const domain = getDomainConfig(runtime.systemMode);
   const incidents = getVisibleBellIncidents(runtime, user).filter((incident) => incident.status !== "resolved");
   if (!incidents.length) {
-    return "No tienes incidentes de campana visibles ahorita.";
+    return `No tienes ${domain.incidentPlural} visibles ahorita.`;
   }
 
   return [
@@ -1397,13 +1633,14 @@ function summarizeIncidentsForUser(runtime: RuntimeEnvelope, user: User) {
 }
 
 function summarizePostSaleForUser(runtime: RuntimeEnvelope, user: User) {
+  const domain = getDomainConfig(runtime.systemMode);
   const followUps = getVisiblePostSaleFollowUps(runtime, user).filter((followUp) => followUp.status !== "closed");
   if (!followUps.length) {
-    return "No tienes seguimientos post-venta visibles ahorita.";
+    return `No tienes ${domain.followUpPlural} visibles ahorita.`;
   }
 
   return [
-    `Tienes ${followUps.length} seguimiento(s) post-venta:`,
+    `Tienes ${followUps.length} ${domain.postSaleLabel.toLowerCase()}(s):`,
     ...followUps
       .slice(0, 6)
       .map(
@@ -1411,6 +1648,91 @@ function summarizePostSaleForUser(runtime: RuntimeEnvelope, user: User) {
           `- ${followUp.id}: ${followUp.customerName} | ${followUp.vehicleModel} | estado=${followUp.status} | vence=${followUp.dueAt.slice(0, 10)}`,
       ),
   ].join("\n");
+}
+
+function summarizeFinanceForUser(runtime: RuntimeEnvelope, user: User) {
+  const accounts = getUserFinanceAccounts(user.id, runtime.state.financeAccounts);
+  const movements = getUserFinanceMovements(user.id, runtime.state.financeMovements);
+  const applications = getUserFinanceApplications(user.id, runtime.state.financeApplications);
+  const unlocked = getFinanceProductsForUser(user.id, runtime.state.scoreSnapshots).filter((product) => product.unlocked).length;
+  const available = accounts.reduce((sum, account) => sum + account.availableBalance, 0);
+  const pending = accounts.reduce((sum, account) => sum + account.pendingBalance, 0);
+
+  return [
+    `Capital visible: ${formatFinanceMoney(available)} disponible y ${formatFinanceMoney(pending)} pendiente.`,
+    `Productos desbloqueados por score: ${unlocked}.`,
+    applications.length
+      ? `Solicitudes activas: ${applications
+          .slice(0, 2)
+          .map((application) => `${application.productName} (${application.status})`)
+          .join(", ")}.`
+      : "No hay solicitudes activas registradas.",
+    movements.length
+      ? `Ultimo movimiento: ${movements[0].title} por ${formatFinanceMoney(movements[0].amount)}.`
+      : "Todavia no hay movimientos financieros visibles.",
+  ].join("\n");
+}
+
+function createFinanceApplication(
+  runtime: RuntimeEnvelope,
+  user: User,
+  productId: string,
+  amount: number,
+  rationale: string,
+) {
+  const product = getFinanceProductsForUser(user.id, runtime.state.scoreSnapshots).find((entry) => entry.id === productId);
+  if (!product || !product.unlocked) {
+    return { ok: false, message: "Ese producto no esta desbloqueado para tu score actual." };
+  }
+
+  const status: FinanceApplication["status"] = amount <= (product.maxAmount || 0) * 0.5 ? "approved" : "under_review";
+  const requestedAt = nowIso();
+  const application: FinanceApplication = {
+    id: crypto.randomUUID(),
+    userId: user.id,
+    productId,
+    productName: product.name,
+    requestedAmount: amount,
+    status,
+    requestedAt,
+    updatedAt: requestedAt,
+    paymentPerPeriod: productId === "salary_advance" ? amount : Math.max(Math.round(amount / 6), 89),
+    termLabel: product.termLabel,
+    rationale,
+    aiSummary:
+      status === "approved"
+        ? "Aprobacion directa por score y disciplina operativa visibles."
+        : "Solicitud enviada a revision porque el monto exige validacion adicional.",
+  };
+
+  runtime.state.financeApplications.unshift(application);
+  runtime.state.financeInsights.unshift({
+    id: crypto.randomUUID(),
+    userId: user.id,
+    title: `Solicitud ${product.name}`,
+    body: `${user.name} pidio ${formatFinanceMoney(amount)}. ${application.aiSummary}`,
+    tone: status === "approved" ? "positive" : "warning",
+    createdAt: requestedAt,
+  });
+  runtime.state.financeInsights = runtime.state.financeInsights.slice(0, 30);
+
+  const wallet = runtime.state.financeAccounts.find((account) => account.userId === user.id && account.kind === "wallet");
+  if (wallet && status === "under_review") {
+    runtime.state.financeMovements.unshift({
+      id: crypto.randomUUID(),
+      userId: user.id,
+      accountId: wallet.id,
+      type: "reserve",
+      status: "pending",
+      title: `Reserva ${product.name}`,
+      detail: "Solicitud creada desde WhatsApp",
+      amount: -Math.min(Math.round(amount * 0.1), 500),
+      createdAt: requestedAt,
+    });
+  }
+
+  appendActivity(runtime, user.id, `Solicito por WhatsApp ${product.name} por ${formatFinanceMoney(amount)}`);
+  return { ok: true, application };
 }
 
 function defaultSalesDueAt() {
@@ -1421,6 +1743,7 @@ function defaultSalesDueAt() {
 }
 
 function generateGeneralReport(runtime: RuntimeEnvelope, viewer?: User | null) {
+  const domain = getDomainConfig(runtime.systemMode);
   const metrics = collectMetrics(runtime, viewer);
   const topBlocked = metrics.blockedTasks.slice(0, 3).map((task) => `${task.id} (${task.blockedReason ?? "sin motivo"})`);
   const overdue = metrics.overdueTasks.slice(0, 3).map((task) => `${task.id} vence ${task.dueAt.slice(0, 16).replace("T", " ")}`);
@@ -1440,10 +1763,12 @@ function generateGeneralReport(runtime: RuntimeEnvelope, viewer?: User | null) {
       summarizeBusiness(runtime, viewer),
       topBlocked.length ? `Bloqueos clave:\n- ${topBlocked.join("\n- ")}` : "Bloqueos clave:\n- sin bloqueos criticos",
       overdue.length ? `Vencidas o por vencer:\n- ${overdue.join("\n- ")}` : "Vencidas o por vencer:\n- sin vencimientos criticos",
-      readyToClose.length ? `Cierres probables:\n- ${readyToClose.join("\n- ")}` : "Cierres probables:\n- sin cierres calientes",
+      readyToClose.length
+        ? `${runtime.systemMode === "hospital" ? "Ingresos probables" : "Cierres probables"}:\n- ${readyToClose.join("\n- ")}`
+        : `${runtime.systemMode === "hospital" ? "Ingresos probables" : "Cierres probables"}:\n- sin ${runtime.systemMode === "hospital" ? "ingresos" : "cierres"} calientes`,
       missingCredit.length
-        ? `Expedientes frenando cierre:\n- ${missingCredit.join("\n- ")}`
-        : "Expedientes frenando cierre:\n- sin faltantes criticos",
+        ? `${domain.creditPlural[0].toUpperCase()}${domain.creditPlural.slice(1)} frenando ${runtime.systemMode === "hospital" ? "ingreso" : "cierre"}:\n- ${missingCredit.join("\n- ")}`
+        : `${domain.creditPlural[0].toUpperCase()}${domain.creditPlural.slice(1)} frenando ${runtime.systemMode === "hospital" ? "ingreso" : "cierre"}:\n- sin faltantes criticos`,
     ].join("\n\n"),
   });
 }
@@ -1485,6 +1810,7 @@ function generateDailyClosureReport(runtime: RuntimeEnvelope, viewer?: User | nu
 }
 
 function generateUserReport(runtime: RuntimeEnvelope, targetUser: User) {
+  const domain = getDomainConfig(runtime.systemMode);
   const tasks = runtime.state.tasks.filter((task) => task.assigneeId === targetUser.id);
   const open = tasks.filter((task) => task.columnId !== "done");
   const done = tasks.filter((task) => task.columnId === "done");
@@ -1507,9 +1833,9 @@ function generateUserReport(runtime: RuntimeEnvelope, targetUser: User) {
       `- abiertas: ${open.length}`,
       `- completadas: ${done.length}`,
       `- bloqueadas: ${blocked.length}`,
-      `- prospectos vivos: ${prospects.filter((prospect) => prospect.status !== "closed_won" && prospect.status !== "closed_lost").length}`,
-      `- pruebas de manejo: ${testDrives.length}`,
-      `- operaciones listas para cierre: ${ready.length}`,
+      `- ${domain.leadPlural} vivas: ${prospects.filter((prospect) => prospect.status !== "closed_won" && prospect.status !== "closed_lost").length}`,
+      `- ${domain.testDrivePlural}: ${testDrives.length}`,
+      `- ${domain.operationPlural} listas: ${ready.length}`,
       `- cierres ganados: ${won.length}`,
       "",
       "Actividad reciente:",
@@ -1519,6 +1845,7 @@ function generateUserReport(runtime: RuntimeEnvelope, targetUser: User) {
 }
 
 function generateSuggestions(runtime: RuntimeEnvelope, viewer?: User | null) {
+  const domain = getDomainConfig(runtime.systemMode);
   const metrics = collectMetrics(runtime, viewer);
   const next: Omit<OperationalSuggestion, "id" | "createdAt">[] = [];
 
@@ -1540,24 +1867,30 @@ function generateSuggestions(runtime: RuntimeEnvelope, viewer?: User | null) {
 
   if (metrics.creditFilesMissing.length) {
     next.push({
-      title: "Cerrar expedientes de credito",
-      body: `Hay ${metrics.creditFilesMissing.length} expediente(s) con documentos faltantes. Sin eso se cae el cierre aun con cliente caliente.`,
+      title: runtime.systemMode === "hospital" ? "Cerrar autorizaciones" : "Cerrar expedientes de credito",
+      body: `Hay ${metrics.creditFilesMissing.length} ${domain.creditSingular}(s) con documentos faltantes. Sin eso se cae el ${runtime.systemMode === "hospital" ? "ingreso" : "cierre"} aun con caso caliente.`,
       severity: "critical",
     });
   }
 
   if (!metrics.scheduledTestDrives.length && metrics.activeProspects.length) {
     next.push({
-      title: "Faltan pruebas de manejo",
-      body: "Hay prospectos vivos sin pruebas de manejo activas. El gerente deberia empujar agenda comercial hoy mismo.",
+      title: runtime.systemMode === "hospital" ? "Faltan valoraciones" : "Faltan pruebas de manejo",
+      body:
+        runtime.systemMode === "hospital"
+          ? "Hay ingresos vivos sin valoraciones activas. La coordinacion deberia empujar agenda hoy mismo."
+          : "Hay prospectos vivos sin pruebas de manejo activas. El gerente deberia empujar agenda comercial hoy mismo.",
       severity: "warning",
     });
   }
 
   if (metrics.atRiskPostSale.length) {
     next.push({
-      title: "Post-venta en riesgo",
-      body: `Hay ${metrics.atRiskPostSale.length} cliente(s) vendidos con riesgo de fuga a otra agencia. No lo dejes para fin de mes.`,
+      title: runtime.systemMode === "hospital" ? "Continuidad de alta en riesgo" : "Post-venta en riesgo",
+      body:
+        runtime.systemMode === "hospital"
+          ? `Hay ${metrics.atRiskPostSale.length} paciente(s) egresados con seguimiento fragil. No lo dejes para mas tarde.`
+          : `Hay ${metrics.atRiskPostSale.length} cliente(s) vendidos con riesgo de fuga a otra agencia. No lo dejes para fin de mes.`,
       severity: "warning",
     });
   }
@@ -2051,15 +2384,61 @@ function showChecklist(runtime: RuntimeEnvelope, task: Task) {
   ].join("\n");
 }
 
-function buildContext(runtime: RuntimeEnvelope, user: User) {
+function buildContext(
+  runtime: RuntimeEnvelope,
+  user: User,
+  thread?: ConversationThread | null,
+  surfaceContext?: AssistantSurfaceContext,
+) {
+  const seed = getSeedForMode(runtime.systemMode);
+  const domain = getDomainConfig(runtime.systemMode);
+  const metrics = collectMetrics(runtime, user);
+  const currentGuide = getCopilotGuideForPath(runtime.systemMode, surfaceContext?.currentPath, user);
   return JSON.stringify(
     {
-      date: "2026-03-13",
+      date: nowIso(),
+      surface: surfaceContext?.surface ?? "whatsapp",
+      workspace: {
+        systemMode: runtime.systemMode,
+        industry: seed.workspace.industry,
+        tagline: seed.workspace.tagline,
+        aiContext: domain.aiContext,
+      },
+      interface: {
+        currentPath: surfaceContext?.currentPath ?? null,
+        currentModule: currentGuide
+          ? {
+              key: currentGuide.key,
+              href: currentGuide.href,
+              title: currentGuide.title,
+              summary: currentGuide.summary,
+              actions: currentGuide.actions,
+            }
+          : null,
+        accessibleModules: getAccessibleCopilotModuleGuides(runtime.systemMode, user).slice(0, 8).map((guide) => ({
+          key: guide.key,
+          href: guide.href,
+          title: guide.title,
+        })),
+      },
       user: {
         name: user.name,
         role: user.role,
         site: user.site,
       },
+      metrics: {
+        openTasks: metrics.openTasks.length,
+        blockedTasks: metrics.blockedTasks.length,
+        overdueTasks: metrics.overdueTasks.length,
+        unreadAlerts: metrics.unreadAlerts.length,
+        activeProspects: metrics.activeProspects.length,
+        scheduledTestDrives: metrics.scheduledTestDrives.length,
+        readyToCloseOperations: metrics.readyToCloseOperations.length,
+        creditFilesMissing: metrics.creditFilesMissing.length,
+        atRiskPostSale: metrics.atRiskPostSale.length,
+      },
+      visibleUsers: buildVisibleUsersDigest(runtime, user),
+      finance: buildFinanceContext(runtime, user),
       tasks: getVisibleTasks(runtime, user).slice(0, 8).map((task) => ({
         id: task.id,
         title: task.title,
@@ -2095,6 +2474,29 @@ function buildContext(runtime: RuntimeEnvelope, user: User) {
           status: file.status,
           missingDocuments: file.missingDocuments,
         })),
+      incidents: getVisibleBellIncidents(runtime, user)
+        .slice(0, 4)
+        .map((incident) => ({
+          id: incident.id,
+          customerName: incident.customerName,
+          area: incident.area,
+          status: incident.status,
+        })),
+      postSale: getVisiblePostSaleFollowUps(runtime, user)
+        .slice(0, 4)
+        .map((followUp) => ({
+          id: followUp.id,
+          customerName: followUp.customerName,
+          status: followUp.status,
+          nextStep: followUp.nextStep,
+        })),
+      activity: runtime.state.activity
+        .filter((entry) => entry.actorId === user.id)
+        .slice(0, 5)
+        .map((entry) => ({
+          message: entry.message,
+          createdAt: entry.createdAt,
+        })),
       notes: runtime.state.notes.slice(0, 5).map((note) => ({
         title: note.title,
         body: note.body,
@@ -2103,13 +2505,25 @@ function buildContext(runtime: RuntimeEnvelope, user: User) {
         kind: report.kind,
         title: report.title,
       })),
+      latestSuggestions: runtime.state.suggestions.slice(0, 4).map((suggestion) => ({
+        title: suggestion.title,
+        body: suggestion.body,
+        severity: suggestion.severity,
+      })),
+      recentConversation: buildRecentConversationContext(thread),
     },
     null,
     2,
   );
 }
 
-function fallbackExtraction(runtime: RuntimeEnvelope, user: User, message: string): OperationalExtraction {
+function fallbackExtraction(
+  runtime: RuntimeEnvelope,
+  user: User,
+  message: string,
+  thread?: ConversationThread | null,
+  _surfaceContext?: AssistantSurfaceContext,
+): OperationalExtraction {
   const normalized = normalizeText(message);
   const taskInstruction = parseTaskInstruction(runtime, user, message);
   const matchedTasks = getVisibleTasks(runtime, user)
@@ -2129,6 +2543,19 @@ function fallbackExtraction(runtime: RuntimeEnvelope, user: User, message: strin
 
   const createTaskIntent = Boolean(taskInstruction);
   const noteIntent = normalized.startsWith("nota") || normalized.startsWith("recuerda");
+  const recentAssistantPrompt = buildRecentConversationContext(thread).some(
+    (entry) =>
+      entry.role === "assistant" &&
+      (normalizeText(entry.text).includes("crear tarea") ||
+        normalizeText(entry.text).includes("que te confirme") ||
+        normalizeText(entry.text).includes("dime si quieres")),
+  );
+  const ambiguousReference =
+    !createTaskIntent &&
+    !requestedReport &&
+    !noteIntent &&
+    /\b(esto|eso|esa|ese|aquello|asi|asi mero|la de ayer|lo pendiente|esa tarea)\b/.test(normalized);
+  const needsClarification = ambiguousReference && recentAssistantPrompt;
 
   return {
     intent: createTaskIntent ? "create_task" : noteIntent ? "save_note" : requestedReport ? "report_request" : "free_text",
@@ -2146,11 +2573,23 @@ function fallbackExtraction(runtime: RuntimeEnvelope, user: User, message: strin
     suggestedDueAt: null,
     suggestedLocation: null,
     wantsSuggestions: normalized.includes("sugerencia") || normalized.includes("recomiendas"),
+    confidence: createTaskIntent || noteIntent || requestedReport ? "high" : needsClarification ? "low" : "medium",
+    needsClarification,
+    clarifyingQuestion: needsClarification
+      ? "Aterrizamelo un poco mas: dime si quieres tarea, reporte, nota o seguimiento, y sobre quien."
+      : null,
   };
 }
 
-async function analyzeMessage(runtime: RuntimeEnvelope, user: User, message: string) {
-  const fallback = fallbackExtraction(runtime, user, message);
+async function analyzeMessage(
+  runtime: RuntimeEnvelope,
+  thread: ConversationThread,
+  user: User,
+  message: string,
+  surfaceContext?: AssistantSurfaceContext,
+) {
+  const fallback = fallbackExtraction(runtime, user, message, thread, surfaceContext);
+  const domain = getDomainConfig(runtime.systemMode);
 
   if (!geminiEnabled()) {
     return fallback;
@@ -2160,15 +2599,22 @@ async function analyzeMessage(runtime: RuntimeEnvelope, user: User, message: str
     const analysis = await generateGeminiJson({
       schema: extractionSchema,
       systemPrompt:
-        "Eres un analista operativo de Capataz AI. Clasifica mensajes de WhatsApp de negocio en espanol mexicano. Detecta si el usuario quiere crear tarea, guardar nota, pedir reporte o sugerencias. Si propones fecha, usa ISO UTC.",
+        `Eres el motor de lectura operativa premium de Capataz AI para ${domain.reportContext}. Clasifica mensajes de WhatsApp en espanol mexicano y aterrizalos a una intencion operable. Usa el historial reciente para resolver referencias como "eso", "esa tarea" o "lo de ayer". Si no hay suficiente contexto para ejecutar o responder con seguridad, marca needsClarification=true y redacta una sola pregunta breve. Prefiere intenciones concretas sobre respuestas vagas. Si propones fecha, usa ISO UTC. No inventes personas, tareas, IDs, montos, acciones ni estados que no esten respaldados por el contexto.`,
       userPrompt: [
+        `Fecha actual: ${nowIso()}`,
         `Mensaje: ${message}`,
+        "Hipotesis determinista inicial:",
+        JSON.stringify(fallback, null, 2),
         "Contexto del usuario y negocio:",
-        buildContext(runtime, user),
+        buildContext(runtime, user, thread, surfaceContext),
         "Reglas:",
         '- requestedReport solo puede ser "general", "daily_closure", "blockers", "team_member" o null.',
         "- suggestedPriority solo puede ser low, medium, high o critical.",
         "- suggestedDueAt debe ser ISO UTC o null.",
+        '- confidence solo puede ser "low", "medium" o "high".',
+        "- needsClarification solo debe ser true si de verdad faltan datos para responder con certeza.",
+        "- clarifyingQuestion debe ser breve, accionable y en espanol mexicano o null.",
+        "- Si el usuario pregunta donde hacer algo, en que modulo entrar, que hacer en la pantalla actual o como navegar, manten la intencion en free_text pero resume claramente la necesidad de guia.",
       ].join("\n\n"),
       maxOutputTokens: 700,
     });
@@ -2188,6 +2634,9 @@ async function analyzeMessage(runtime: RuntimeEnvelope, user: User, message: str
         suggestedPriority: analysis.suggestedPriority ?? fallback.suggestedPriority,
         suggestedDueAt: analysis.suggestedDueAt ?? fallback.suggestedDueAt,
         suggestedLocation: analysis.suggestedLocation ?? fallback.suggestedLocation,
+        confidence: analysis.confidence ?? fallback.confidence,
+        needsClarification: analysis.needsClarification ?? fallback.needsClarification,
+        clarifyingQuestion: analysis.clarifyingQuestion ?? fallback.clarifyingQuestion,
       };
     }
 
@@ -2239,17 +2688,21 @@ function buildPersonaFallbackReply(
     persona.id === "mateo"
       ? "Voy al punto:"
       : persona.id === "bruno"
-        ? "Te lo dejo claro:"
+        ? "Te lo dejo claro y sin vueltas:"
         : persona.id === "lucia"
-          ? "En corto y con orden:"
+          ? "Te acompano con orden:"
           : persona.id === "sofia"
-            ? "En concreto:"
+            ? "Claro, va asi:"
             : persona.id === "valeria"
-              ? "Te lo bajo rapido:"
-              : "Directo:";
+              ? "Te lo explico facil:"
+              : "Vamos por partes:";
 
   if (automation.reply) {
     return automation.reply;
+  }
+
+  if (extraction.needsClarification && extraction.clarifyingQuestion) {
+    return `${personaLead} ${extraction.clarifyingQuestion}`;
   }
 
   if (report) {
@@ -2257,14 +2710,36 @@ function buildPersonaFallbackReply(
   }
 
   if (suggestions.length) {
-    return `${personaLead} ${suggestions[0]?.title}: ${suggestions[0]?.body}`;
+    return `${personaLead} ${suggestions[0]?.title}: ${suggestions[0]?.body} Si quieres, tambien te digo como moverlo dentro del sistema.`;
   }
 
   if (extraction.intent === "create_task") {
     return `${personaLead} no te confirme ninguna alta real. Si quieres registrarla, usa "crear tarea <pendiente> para <persona>" y te digo si quedo hecha o si te falta permiso.`;
   }
 
-  return `${personaLead} te ayudo con tareas, reportes, bloqueos y seguimiento. Si quieres mover algo, dimelo en formato directo.`;
+  return `${personaLead} te ayudo con tareas, reportes, bloqueos, fintech y navegacion dentro del sistema. Si me dices tu objetivo, yo te explico el camino y el siguiente paso.`;
+}
+
+function renderReplyPlan(plan: z.infer<typeof replyPlanSchema>) {
+  const blocks = [plan.opening.trim()];
+
+  if (plan.operationalRead?.trim()) {
+    blocks.push(`Lo importante aqui es: ${plan.operationalRead.trim()}`);
+  }
+
+  if (plan.nextSteps.length) {
+    blocks.push(["Siguiente paso sugerido:", ...plan.nextSteps.slice(0, 3).map((step) => `- ${step.trim()}`)].join("\n"));
+  }
+
+  if (plan.risk?.trim()) {
+    blocks.push(`Ojo con esto: ${plan.risk.trim()}`);
+  }
+
+  if (plan.close?.trim()) {
+    blocks.push(plan.close.trim());
+  }
+
+  return blocks.join("\n\n");
 }
 
 async function refineReportWithGemini(report: GeneratedReport, runtime: RuntimeEnvelope, user: User) {
@@ -2273,11 +2748,12 @@ async function refineReportWithGemini(report: GeneratedReport, runtime: RuntimeE
   }
 
   const persona = getAssistantPersonaForUserId(user.id);
+  const domain = getDomainConfig(runtime.systemMode);
 
   try {
     const body = await generateGeminiText({
       systemPrompt:
-        `${persona.stylePrompt} Reescribe reportes operativos en espanol mexicano claro, corto y accionable. No inventes datos.`,
+        `${persona.stylePrompt} Reescribe reportes operativos para ${domain.reportContext} en espanol mexicano claro, corto y accionable. No inventes datos.`,
       userPrompt: [`Usuario: ${user.name}`, "Contexto:", buildContext(runtime, user), "Reporte base:", report.body].join("\n\n"),
       maxOutputTokens: 500,
     });
@@ -2307,17 +2783,18 @@ async function maybeGenerateReport(runtime: RuntimeEnvelope, user: User, extract
   return targetUser ? refineReportWithGemini(generateUserReport(runtime, targetUser), runtime, user) : null;
 }
 
-function ensureThread(runtime: RuntimeEnvelope, phone: string, channel: CapatazChannel) {
-  const key = getThreadKey(phone, channel);
+function ensureThread(runtime: RuntimeEnvelope, identifier: string, channel: CapatazChannel) {
+  const key = getThreadKey(identifier, channel);
   const existing = runtime.threads[key];
   if (existing) {
     return existing;
   }
 
-  const user = getUserByPhone(runtime, phone);
+  const user =
+    channel === "dashboard_copilot" ? getUserById(runtime, identifier.replace(/^dashboard:/, "")) : getUserByPhone(runtime, identifier);
   const thread: ConversationThread = {
     channel,
-    phone,
+    phone: identifier,
     userId: user?.id ?? null,
     latestAnalysis: null,
     latestReport: null,
@@ -2326,8 +2803,12 @@ function ensureThread(runtime: RuntimeEnvelope, phone: string, channel: CapatazC
         id: crypto.randomUUID(),
         role: "system",
         text: user
-          ? `Canal listo para ${user.name}. Usa "ayuda" si quieres ver comandos.`
-          : "Numero no reconocido todavia. Asigna este telefono a un colaborador antes de operar.",
+          ? channel === "dashboard_copilot"
+            ? `Copiloto listo para ${user.name}. Preguntame que hacer, a donde ir o como moverte en el sistema.`
+            : `Canal listo para ${user.name}. Usa "ayuda" si quieres ver comandos.`
+          : channel === "dashboard_copilot"
+            ? "No identifique al usuario del copiloto."
+            : "Numero no reconocido todavia. Asigna este telefono a un colaborador antes de operar.",
         createdAt: nowIso(),
       },
     ],
@@ -2335,6 +2816,10 @@ function ensureThread(runtime: RuntimeEnvelope, phone: string, channel: CapatazC
 
   runtime.threads[key] = thread;
   return thread;
+}
+
+function ensureDashboardCopilotThread(runtime: RuntimeEnvelope, userId: string) {
+  return ensureThread(runtime, `dashboard:${userId}`, "dashboard_copilot");
 }
 
 function appendMessage(
@@ -2383,11 +2868,51 @@ function snapshotFromThread(runtime: RuntimeEnvelope, thread: ConversationThread
   };
 }
 
-function executeRules(runtime: RuntimeEnvelope, user: User, message: string): ActionResult {
+function executeRules(runtime: RuntimeEnvelope, user: User, message: string, surfaceContext?: AssistantSurfaceContext): ActionResult {
   const normalized = normalizeText(message);
+  const currentPath = surfaceContext?.currentPath;
 
   if (!normalized || normalized === "ayuda" || normalized === "help") {
-    return { intent: "help", reply: helpMessage(user) };
+    return { intent: "help", reply: helpMessage(runtime, user) };
+  }
+
+  if (
+    currentPath &&
+    (normalized.includes("que puedo hacer aqui") ||
+      normalized.includes("para que sirve esta pantalla") ||
+      normalized.includes("donde estoy") ||
+      normalized.includes("como uso esta pantalla") ||
+      normalized.includes("que hago aqui"))
+  ) {
+    return {
+      intent: "module_guidance",
+      action: "route_guidance",
+      reply: buildCurrentModuleReply(runtime, user, currentPath),
+    };
+  }
+
+  if (
+    normalized.includes("donde ") ||
+    normalized.includes("en que modulo") ||
+    normalized.includes("en que pantalla") ||
+    normalized.includes("no encuentro") ||
+    normalized.includes("a donde voy") ||
+    normalized.includes("como llego") ||
+    normalized.includes("como uso") ||
+    normalized.includes("como creo") ||
+    normalized.includes("como solicito") ||
+    normalized.includes("como reviso") ||
+    normalized.includes("donde veo") ||
+    normalized.includes("donde hago")
+  ) {
+    const routeReply = buildRouteGuidanceReply(runtime, user, message, currentPath);
+    if (routeReply) {
+      return {
+        intent: "navigation_guidance",
+        action: "route_guidance",
+        reply: routeReply,
+      };
+    }
   }
 
   if (
@@ -2404,7 +2929,60 @@ function executeRules(runtime: RuntimeEnvelope, user: User, message: string): Ac
     return { intent: "list_tasks", reply: summarizeTasksForUser(runtime, user) };
   }
 
-  if (normalized === "mis prospectos" || normalized === "prospectos") {
+  if (
+    normalized === "mi saldo" ||
+    normalized === "fintech" ||
+    normalized === "mis finanzas" ||
+    normalized === "capital" ||
+    normalized === "credito"
+  ) {
+    return { intent: "finance_summary", reply: summarizeFinanceForUser(runtime, user) };
+  }
+
+  if (normalized === "mis movimientos" || normalized === "movimientos") {
+    const movements = getUserFinanceMovements(user.id, runtime.state.financeMovements).slice(0, 4);
+    if (!movements.length) {
+      return { intent: "finance_movements", reply: "Todavia no veo movimientos financieros en tu cuenta." };
+    }
+    return {
+      intent: "finance_movements",
+      reply: [`Tus ultimos movimientos:`, ...movements.map((movement) => `- ${movement.title}: ${formatFinanceMoney(movement.amount)} (${movement.status})`)].join("\n"),
+    };
+  }
+
+  if (normalized === "mis solicitudes" || normalized === "solicitudes fintech") {
+    const applications = getUserFinanceApplications(user.id, runtime.state.financeApplications);
+    if (!applications.length) {
+      return { intent: "finance_applications", reply: "No hay solicitudes fintech registradas para tu usuario." };
+    }
+    return {
+      intent: "finance_applications",
+      reply: [`Solicitudes activas:`, ...applications.slice(0, 4).map((application) => `- ${application.productName}: ${formatFinanceMoney(application.requestedAmount)} (${application.status})`)].join("\n"),
+    };
+  }
+
+  const financeApplicationMatch = normalized.match(/^(?:solicitar|pide|quiero)\s+(adelanto|microcredito|herramientas|seguro)(?:\s+(\d+))?/);
+  if (financeApplicationMatch) {
+    const productMap: Record<string, string> = {
+      adelanto: "salary_advance",
+      microcredito: "micro_credit",
+      herramientas: "tooling_credit",
+      seguro: "shield_plus",
+    };
+    const productId = productMap[financeApplicationMatch[1]];
+    const amount = Number(financeApplicationMatch[2] ?? (productId === "shield_plus" ? 0 : 3000));
+    const result = createFinanceApplication(runtime, user, productId, amount, "Solicitud creada desde WhatsApp.");
+    if (!result.ok || !result.application) {
+      return { intent: "finance_apply", reply: result.message };
+    }
+    return {
+      intent: "finance_apply",
+      action: "finance_application_created",
+      reply: `Listo. Registre ${result.application.productName} por ${formatFinanceMoney(result.application.requestedAmount)} con estado ${result.application.status}.`,
+    };
+  }
+
+  if (normalized === "mis prospectos" || normalized === "prospectos" || normalized === "mis ingresos" || normalized === "ingresos") {
     return { intent: "list_prospects", reply: summarizeProspectsForUser(runtime, user) };
   }
 
@@ -2412,15 +2990,20 @@ function executeRules(runtime: RuntimeEnvelope, user: User, message: string): Ac
     return { intent: "list_operations", reply: summarizeOperationsForUser(runtime, user) };
   }
 
-  if (normalized === "expedientes" || normalized === "mis expedientes") {
+  if (
+    normalized === "expedientes" ||
+    normalized === "mis expedientes" ||
+    normalized === "autorizaciones" ||
+    normalized === "mis autorizaciones"
+  ) {
     return { intent: "list_credit_files", reply: summarizeCreditFilesForUser(runtime, user) };
   }
 
-  if (normalized === "campana" || normalized === "mis incidentes") {
+  if (normalized === "campana" || normalized === "mis incidentes" || normalized === "incidentes") {
     return { intent: "list_incidents", reply: summarizeIncidentsForUser(runtime, user) };
   }
 
-  if (normalized === "mis seguimientos" || normalized === "seguimientos" || normalized === "postventa") {
+  if (normalized === "mis seguimientos" || normalized === "seguimientos" || normalized === "postventa" || normalized === "mis seguimientos de alta") {
     return { intent: "list_post_sale", reply: summarizePostSaleForUser(runtime, user) };
   }
 
@@ -2860,14 +3443,17 @@ async function applyAutomation(runtime: RuntimeEnvelope, user: User, extraction:
 
 async function generateAssistantReply(
   runtime: RuntimeEnvelope,
+  thread: ConversationThread,
   user: User,
   message: string,
+  surfaceContext: AssistantSurfaceContext | undefined,
   extraction: OperationalExtraction,
   report: GeneratedReport | null,
   suggestions: OperationalSuggestion[],
   automation: AutomationResult,
 ) {
   const persona = getAssistantPersonaForUserId(user.id);
+  const domain = getDomainConfig(runtime.systemMode);
   const baseline = [renderExtraction(extraction)];
 
   if (report) {
@@ -2878,19 +3464,28 @@ async function generateAssistantReply(
     baseline.push(["Sugerencias:", ...suggestions.map((item) => `- ${item.title}: ${item.body}`)].join("\n"));
   }
 
+  if (extraction.needsClarification && extraction.clarifyingQuestion && !automation.reply && !report && !suggestions.length) {
+    return extraction.clarifyingQuestion;
+  }
+
   if (!geminiEnabled()) {
     return buildPersonaFallbackReply(user, extraction, report, suggestions, automation);
   }
 
   try {
-    const reply = await generateGeminiText({
+    const plan = await generateGeminiJson({
+      schema: replyPlanSchema,
       systemPrompt:
-        `${persona.stylePrompt} Eres un asistente operativo premium para negocio automotriz. Responde en espanol mexicano, corto, accionable y humano. Si ya existe separacion, reporte o sugerencias, usa eso como base y no inventes datos. Nunca afirmes que creaste, asignaste o actualizaste algo si la automatizacion confirmada dice que no ocurrio.`,
+        `${persona.stylePrompt} Eres un asistente operativo premium para ${domain.reportContext}. Devuelve un plan de respuesta breve, humano, claro y con sensacion real de acompanamiento. No suenes como un router ni como un bot vacio. Explica el por que, el siguiente paso y el riesgo principal con tono amable y criterio ejecutivo. Si ya existe separacion, reporte, automatizacion o sugerencias, usalos como base y no inventes datos. Nunca afirmes que creaste, asignaste o actualizaste algo si la automatizacion confirmada dice que no ocurrio. Si el mensaje esta ambiguo, usa opening para pedir la aclaracion correcta y deja nextSteps vacio.`,
       userPrompt: [
         `Asistente asignado: ${persona.displayName} (${persona.toneLabel})`,
+        `Vertical activa: ${runtime.systemMode} | Contexto: ${domain.aiContext}`,
         `Mensaje del usuario: ${message}`,
         "Contexto del negocio:",
-        buildContext(runtime, user),
+        buildContext(runtime, user, thread, surfaceContext),
+        buildRecentConversationContext(thread).length
+          ? `Historial reciente:\n${buildRecentConversationContext(thread).map((entry) => `- ${entry.role}: ${entry.text}`).join("\n")}`
+          : "Historial reciente: sin mensajes previos relevantes.",
         automation.createdTask
           ? `Automatizacion confirmada: se creo la tarea ${automation.createdTask.id} para ${automation.createdAssignee?.name ?? "sin asignado"}.`
           : "Automatizacion confirmada: no se creo ninguna tarea ni movimiento irreversible con este mensaje.",
@@ -2902,14 +3497,15 @@ async function generateAssistantReply(
       maxOutputTokens: 600,
     });
 
-    return reply ?? buildPersonaFallbackReply(user, extraction, report, suggestions, automation);
+    return plan ? renderReplyPlan(plan) : buildPersonaFallbackReply(user, extraction, report, suggestions, automation);
   } catch {
     return buildPersonaFallbackReply(user, extraction, report, suggestions, automation);
   }
 }
 
 export function getPublicCollaboratorContacts(): PublicCollaboratorContact[] {
-  return seedData.users
+  const seed = getSeedForMode("automotive");
+  return seed.users
     .filter((user) => Boolean(user.phone))
     .map((user) => ({
       userId: user.id,
@@ -2920,23 +3516,87 @@ export function getPublicCollaboratorContacts(): PublicCollaboratorContact[] {
     }));
 }
 
-export async function getConversationSnapshot(phone: string, channel: CapatazChannel = "mock_whatsapp") {
-  const runtime = await refreshRuntime();
+export async function getConversationSnapshot(
+  phone: string,
+  channel: CapatazChannel = "mock_whatsapp",
+  systemMode: SystemMode = "automotive",
+) {
+  const runtime = await refreshRuntime(systemMode);
   const thread = ensureThread(runtime, phone, channel);
   const user = getUserByPhone(runtime, phone);
   return snapshotFromThread(runtime, thread, user);
+}
+
+function buildCopilotSnapshot(
+  runtime: RuntimeEnvelope,
+  thread: ConversationThread,
+  user: User,
+  currentPath?: string | null,
+  message?: string,
+) {
+  const currentModule = getCopilotGuideForPath(runtime.systemMode, currentPath, user);
+  const suggestedModules = (message
+    ? findCopilotGuidesForQuery(runtime.systemMode, message, user)
+    : currentModule
+      ? [currentModule]
+      : getAccessibleCopilotModuleGuides(runtime.systemMode, user))
+    .slice(0, 4)
+    .map((guide) => ({
+      key: guide.key,
+      href: guide.href,
+      title: guide.title,
+      summary: guide.summary,
+      actions: guide.actions,
+    }));
+
+  return {
+    ...snapshotFromThread(runtime, thread, user),
+    currentModule: currentModule
+      ? {
+          key: currentModule.key,
+          href: currentModule.href,
+          title: currentModule.title,
+          summary: currentModule.summary,
+          actions: currentModule.actions,
+        }
+      : null,
+    suggestedModules,
+  };
+}
+
+export async function getDashboardCopilotSnapshot({
+  userId,
+  systemMode = "automotive",
+  currentPath,
+}: {
+  userId: string;
+  systemMode?: SystemMode;
+  currentPath?: string | null;
+}) {
+  const runtime = await refreshRuntime(systemMode);
+  const user = getUserById(runtime, userId);
+  if (!user) {
+    return null;
+  }
+
+  const thread = ensureDashboardCopilotThread(runtime, user.id);
+  return buildCopilotSnapshot(runtime, thread, user, currentPath);
 }
 
 export async function handleCapatazMessage({
   phone,
   text,
   channel = "mock_whatsapp",
+  systemMode = "automotive",
+  currentPath,
 }: {
   phone: string;
   text: string;
   channel?: CapatazChannel;
+  systemMode?: SystemMode;
+  currentPath?: string | null;
 }) {
-  const runtime = await refreshRuntime();
+  const runtime = await refreshRuntime(systemMode);
   const thread = ensureThread(runtime, phone, channel);
   const user = getUserByPhone(runtime, phone);
 
@@ -2946,7 +3606,7 @@ export async function handleCapatazMessage({
     const reply =
       "Todavia no reconozco este numero dentro del negocio. Primero registra al colaborador y despues volvemos a intentar.";
     appendMessage(thread, "assistant", reply);
-    await persistRuntime();
+    await persistRuntime(systemMode);
     return {
       ok: false,
       reply,
@@ -2955,20 +3615,24 @@ export async function handleCapatazMessage({
     };
   }
 
-  const extraction = await analyzeMessage(runtime, user, text);
-  const ruleResult = executeRules(runtime, user, text);
+  const surfaceContext: AssistantSurfaceContext = {
+    currentPath,
+    surface: channel === "dashboard_copilot" ? "dashboard_copilot" : "whatsapp",
+  };
+  const extraction = await analyzeMessage(runtime, thread, user, text, surfaceContext);
+  const ruleResult = executeRules(runtime, user, text, surfaceContext);
   const automation = ruleResult.reply ? {} : await applyAutomation(runtime, user, extraction);
   const report = ruleResult.report ?? (await maybeGenerateReport(runtime, user, extraction));
   const suggestions = ruleResult.suggestions ?? automation.suggestions ?? [];
   const reply =
     ruleResult.reply ??
     automation.reply ??
-    (await generateAssistantReply(runtime, user, text, extraction, report, suggestions, automation));
+    (await generateAssistantReply(runtime, thread, user, text, surfaceContext, extraction, report, suggestions, automation));
 
   thread.latestAnalysis = extraction;
   thread.latestReport = report ?? null;
   appendMessage(thread, "assistant", reply);
-  await persistRuntime();
+  await persistRuntime(systemMode);
 
   return {
     ok: true,
@@ -2981,26 +3645,92 @@ export async function handleCapatazMessage({
   };
 }
 
+export async function handleDashboardCopilotMessage({
+  userId,
+  text,
+  systemMode = "automotive",
+  currentPath,
+}: {
+  userId: string;
+  text: string;
+  systemMode?: SystemMode;
+  currentPath?: string | null;
+}) {
+  const runtime = await refreshRuntime(systemMode);
+  const user = getUserById(runtime, userId);
+
+  if (!user) {
+    return {
+      ok: false,
+      reply: "No pude identificar tu sesion actual dentro del sistema.",
+      intent: "unknown_user",
+      currentModule: null,
+      suggestedModules: [],
+      messages: [],
+      latestAnalysis: null,
+      latestReport: null,
+      latestNotes: [],
+      latestSuggestions: [],
+      stats: null,
+    };
+  }
+
+  const thread = ensureDashboardCopilotThread(runtime, user.id);
+  appendMessage(thread, "user", text);
+
+  const surfaceContext: AssistantSurfaceContext = {
+    currentPath,
+    surface: "dashboard_copilot",
+  };
+  const extraction = await analyzeMessage(runtime, thread, user, text, surfaceContext);
+  const ruleResult = executeRules(runtime, user, text, surfaceContext);
+  const automation = ruleResult.reply ? {} : await applyAutomation(runtime, user, extraction);
+  const report = ruleResult.report ?? (await maybeGenerateReport(runtime, user, extraction));
+  const suggestions = ruleResult.suggestions ?? automation.suggestions ?? [];
+  const reply =
+    ruleResult.reply ??
+    automation.reply ??
+    (await generateAssistantReply(runtime, thread, user, text, surfaceContext, extraction, report, suggestions, automation));
+
+  thread.latestAnalysis = extraction;
+  thread.latestReport = report ?? null;
+  appendMessage(thread, "assistant", reply);
+  await persistRuntime(systemMode);
+
+  return {
+    ok: true,
+    reply,
+    intent: ruleResult.intent,
+    action: ruleResult.action ?? null,
+    report,
+    note: ruleResult.note ?? automation.note ?? null,
+    ...buildCopilotSnapshot(runtime, thread, user, currentPath, text),
+  };
+}
+
 export async function registerOutboundAssistantMessage({
   phone,
   text,
   channel = "mock_whatsapp",
+  systemMode = "automotive",
 }: {
   phone: string;
   text: string;
   channel?: CapatazChannel;
+  systemMode?: SystemMode;
 }) {
-  const runtime = await refreshRuntime();
+  const runtime = await refreshRuntime(systemMode);
   const thread = ensureThread(runtime, phone, channel);
   const user = getUserByPhone(runtime, phone);
   appendMessage(thread, "assistant", text);
-  await persistRuntime();
+  await persistRuntime(systemMode);
   return snapshotFromThread(runtime, thread, user);
 }
 
-export async function getRuntimeSyncPayload(): Promise<RuntimeSyncPayload> {
-  const runtime = await refreshRuntime();
+export async function getRuntimeSyncPayload(systemMode: SystemMode = "automotive"): Promise<RuntimeSyncPayload> {
+  const runtime = await refreshRuntime(systemMode);
   return hydrateRuntimePayload({
+    systemMode: runtime.systemMode,
     users: runtime.state.users,
     tasks: runtime.state.tasks,
     checklists: runtime.state.checklists,
@@ -3013,6 +3743,12 @@ export async function getRuntimeSyncPayload(): Promise<RuntimeSyncPayload> {
     bellIncidents: runtime.state.bellIncidents,
     postSaleFollowUps: runtime.state.postSaleFollowUps,
     scheduledBroadcasts: runtime.state.scheduledBroadcasts,
+    financeAccounts: runtime.state.financeAccounts,
+    financeMovements: runtime.state.financeMovements,
+    financeApplications: runtime.state.financeApplications,
+    financeInsights: runtime.state.financeInsights,
+    scoreSnapshots: runtime.state.scoreSnapshots,
+    weekly: runtime.state.weekly,
     reports: runtime.state.reports,
     notes: runtime.state.notes,
     suggestions: runtime.state.suggestions,
@@ -3020,8 +3756,12 @@ export async function getRuntimeSyncPayload(): Promise<RuntimeSyncPayload> {
 }
 
 export async function replaceRuntimeSyncPayload(payload: RuntimeSyncPayload) {
-  const runtime = await refreshRuntime();
+  const runtime = await refreshRuntime(payload.systemMode);
   const hydratedPayload = hydrateRuntimePayload(payload);
+  if (runtime.systemMode !== hydratedPayload.systemMode) {
+    runtime.threads = {};
+  }
+  runtime.systemMode = hydratedPayload.systemMode;
   runtime.state.users = hydratedPayload.users;
   runtime.state.tasks = payload.tasks;
   runtime.state.checklists = payload.checklists;
@@ -3034,27 +3774,33 @@ export async function replaceRuntimeSyncPayload(payload: RuntimeSyncPayload) {
   runtime.state.bellIncidents = hydratedPayload.bellIncidents;
   runtime.state.postSaleFollowUps = hydratedPayload.postSaleFollowUps;
   runtime.state.scheduledBroadcasts = hydratedPayload.scheduledBroadcasts;
+  runtime.state.financeAccounts = hydratedPayload.financeAccounts;
+  runtime.state.financeMovements = hydratedPayload.financeMovements;
+  runtime.state.financeApplications = hydratedPayload.financeApplications;
+  runtime.state.financeInsights = hydratedPayload.financeInsights;
+  runtime.state.scoreSnapshots = hydratedPayload.scoreSnapshots;
+  runtime.state.weekly = hydratedPayload.weekly;
   runtime.state.reports = hydratedPayload.reports;
   runtime.state.notes = hydratedPayload.notes;
   runtime.state.suggestions = hydratedPayload.suggestions;
-  await persistRuntime();
-  return getRuntimeSyncPayload();
+  await persistRuntime(payload.systemMode);
+  return getRuntimeSyncPayload(payload.systemMode);
 }
 
-export async function runScheduledBroadcastNow(broadcastId: string) {
-  const runtime = await refreshRuntime();
+export async function runScheduledBroadcastNow(broadcastId: string, systemMode: SystemMode = "automotive") {
+  const runtime = await refreshRuntime(systemMode);
   const broadcast = runtime.state.scheduledBroadcasts.find((entry) => entry.id === broadcastId);
   if (!broadcast) {
     return { ok: false, delivered: 0 };
   }
 
   const delivered = runScheduledBroadcast(runtime, broadcast);
-  await persistRuntime();
+  await persistRuntime(systemMode);
   return { ok: true, delivered };
 }
 
-export async function runTeamReminderNow() {
-  const runtime = await refreshRuntime();
+export async function runTeamReminderNow(systemMode: SystemMode = "automotive") {
+  const runtime = await refreshRuntime(systemMode);
   const recipients = runtime.state.users.filter((user) => Boolean(user.phone));
 
   for (const user of recipients) {
@@ -3063,18 +3809,18 @@ export async function runTeamReminderNow() {
     const thread = ensureThread(runtime, user.phone as string, getWhatsAppProvider() === "cloud" ? "whatsapp_cloud" : "mock_whatsapp");
     appendMessage(thread, "assistant", "Te dejo tambien tu grafico rapido del turno para que lo veas en WhatsApp.", {
       kind: "chart",
-      url: buildReminderChartUrl(user.id),
+      url: buildReminderChartUrl(user.id, systemMode),
       alt: `Grafico operativo de ${user.name}`,
     });
   }
 
-  appendActivity(runtime, "usr-admin", "Capataz IA envio recordatorios personalizados al equipo completo");
-  await persistRuntime();
+  appendActivity(runtime, getPrimaryAdminUserId(runtime), "Capataz IA envio recordatorios personalizados al equipo completo");
+  await persistRuntime(systemMode);
   return { ok: true, delivered: recipients.length };
 }
 
-export async function tickRuntimeAutomation() {
-  const runtime = await refreshRuntime();
+export async function tickRuntimeAutomation(systemMode: SystemMode = "automotive") {
+  const runtime = await refreshRuntime(systemMode);
   return {
     ok: true,
     reports: runtime.state.reports.length,

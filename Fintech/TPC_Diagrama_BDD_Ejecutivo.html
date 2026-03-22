@@ -1,0 +1,1299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TPC | Diagrama BDD Ejecutivo</title>
+  <style>
+    :root{
+      --bg:#071019;
+      --bg-2:#0a1520;
+      --bg-3:#0d1b27;
+      --panel:#0b1320cc;
+      --card:#0e1f2dd9;
+      --card-2:#102535;
+      --line:#1d4158;
+      --line-2:#2b6985;
+      --text:#ecf7ff;
+      --muted:#91b3c8;
+      --cyan:#76e4f7;
+      --blue:#7db7ff;
+      --gold:#ffd27a;
+      --amber:#ffb454;
+      --mint:#7af0c4;
+      --rose:#ff8ab3;
+      --violet:#b69cff;
+      --shadow:0 20px 50px rgba(0,0,0,.38);
+      --radius:22px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{height:100%}
+    body{
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color:var(--text);
+      background:
+        radial-gradient(circle at 12% 15%, rgba(118,228,247,.12), transparent 0 22%),
+        radial-gradient(circle at 82% 12%, rgba(255,180,84,.10), transparent 0 25%),
+        radial-gradient(circle at 52% 102%, rgba(122,240,196,.08), transparent 0 24%),
+        linear-gradient(180deg, #071019 0%, #07131d 100%);
+      overflow:hidden;
+    }
+    .app{
+      display:grid;
+      grid-template-columns:minmax(0,1fr) 470px;
+      height:100vh;
+      width:100vw;
+    }
+    .main{
+      position:relative;
+      overflow:hidden;
+      border-right:1px solid rgba(255,255,255,.08);
+      background:
+        linear-gradient(rgba(10,21,32,.72), rgba(7,16,25,.88)),
+        linear-gradient(90deg, rgba(255,255,255,.03) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,.03) 1px, transparent 1px);
+      background-size:auto, 32px 32px, 32px 32px;
+      background-position:0 0, 0 0, 0 0;
+    }
+    .topbar{
+      position:absolute; left:22px; right:22px; top:18px; z-index:8;
+      display:flex; justify-content:space-between; gap:18px; align-items:flex-start;
+    }
+    .brand{
+      background:rgba(8,18,29,.72);
+      border:1px solid rgba(118,228,247,.24);
+      backdrop-filter: blur(14px);
+      border-radius:24px;
+      padding:18px 20px;
+      box-shadow: var(--shadow);
+      max-width:980px;
+    }
+    .eyebrow{
+      display:inline-flex; gap:10px; align-items:center;
+      color:var(--cyan); font-size:11px; letter-spacing:2px; text-transform:uppercase; font-weight:800;
+      margin-bottom:10px;
+    }
+    .eyebrow .dot{width:9px;height:9px;border-radius:999px;background:var(--cyan);box-shadow:0 0 0 6px rgba(118,228,247,.12)}
+    h1{
+      font-size:30px; line-height:1.05; letter-spacing:-.04em;
+      margin-bottom:8px; font-weight:900;
+    }
+    .subtitle{
+      font-size:14px; color:var(--muted); line-height:1.6;
+      max-width:920px;
+    }
+    .metric-rail{
+      display:flex; gap:12px; flex-wrap:wrap; justify-content:flex-end;
+      max-width:530px;
+    }
+    .metric{
+      min-width:132px;
+      background:rgba(8,18,29,.74);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:20px;
+      padding:12px 14px;
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+    }
+    .metric .label{font-size:11px; text-transform:uppercase; letter-spacing:1.6px; color:var(--muted); margin-bottom:6px; font-weight:700}
+    .metric .value{font-size:24px; font-weight:900; letter-spacing:-.04em}
+    .metric .hint{font-size:12px; color:#bcd4e2}
+
+    .chipbar{
+      position:absolute; left:22px; right:22px; top:160px; z-index:7;
+      display:flex; gap:10px; flex-wrap:wrap; align-items:center;
+    }
+    .chip{
+      appearance:none; border:none; cursor:pointer;
+      background:rgba(10,21,32,.82);
+      color:#d9f4ff;
+      border:1px solid rgba(255,255,255,.10);
+      border-radius:999px;
+      padding:10px 14px; font-size:13px; font-weight:700;
+      transition:transform .18s ease, border-color .18s ease, background .18s ease, opacity .18s ease;
+      box-shadow: var(--shadow);
+    }
+    .chip:hover{transform:translateY(-1px)}
+    .chip.active{background:rgba(118,228,247,.12); border-color:rgba(118,228,247,.55); color:var(--cyan)}
+    .canvas-wrap{
+      position:absolute; inset:212px 0 0 0;
+      overflow:auto;
+      padding:24px 32px 44px 32px;
+      scroll-behavior:smooth;
+    }
+    .canvas{
+      position:relative;
+      width:2140px;
+      height:1420px;
+      margin-right:28px;
+    }
+    .zone-label{
+      position:absolute;
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:2.2px;
+      color:rgba(214,239,251,.58);
+      font-weight:900;
+      padding:8px 12px;
+      border:1px dashed rgba(255,255,255,.10);
+      border-radius:999px;
+      background:rgba(10,21,32,.35);
+      backdrop-filter: blur(6px);
+      z-index:1;
+    }
+    svg.links{
+      position:absolute;
+      inset:0;
+      overflow:visible;
+      z-index:0;
+      filter: drop-shadow(0 0 18px rgba(118,228,247,.08));
+    }
+    .table-node{
+      position:absolute;
+      width:280px;
+      min-height:154px;
+      border-radius:24px;
+      background:
+        linear-gradient(180deg, rgba(18,40,56,.92), rgba(10,22,34,.94));
+      border:1px solid rgba(255,255,255,.08);
+      box-shadow: var(--shadow);
+      z-index:2;
+      cursor:pointer;
+      transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, opacity .18s ease, filter .18s ease;
+      overflow:hidden;
+    }
+    .table-node::before{
+      content:"";
+      position:absolute; inset:0;
+      background:
+        radial-gradient(circle at 90% 15%, rgba(255,255,255,.07), transparent 0 22%),
+        linear-gradient(180deg, rgba(255,255,255,.02), transparent 35%);
+      pointer-events:none;
+    }
+    .table-node:hover{
+      transform:translateY(-3px);
+      border-color:rgba(255,255,255,.18);
+      box-shadow:0 18px 46px rgba(0,0,0,.46), 0 0 0 1px rgba(255,255,255,.05) inset;
+    }
+    .table-node.selected{
+      border-color:rgba(255,210,122,.65);
+      box-shadow:0 22px 58px rgba(0,0,0,.5), 0 0 0 1px rgba(255,210,122,.12) inset, 0 0 0 8px rgba(255,210,122,.06);
+      transform:translateY(-4px);
+    }
+    .table-node.dimmed{opacity:.18; filter:saturate(.4)}
+    .table-node.hidden{display:none}
+    .node-top{
+      padding:16px 16px 12px 16px;
+      border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .domain-pill{
+      display:inline-flex; gap:8px; align-items:center;
+      font-size:10px; font-weight:900; letter-spacing:1.8px;
+      text-transform:uppercase;
+      padding:6px 10px;
+      border-radius:999px;
+      margin-bottom:10px;
+      color:#08121b;
+    }
+    .domain-pill .tiny{width:8px;height:8px;border-radius:999px;background:currentColor;opacity:.85}
+    .node-title{
+      font-size:17px; letter-spacing:-.03em; font-weight:900; margin-bottom:4px;
+    }
+    .node-subtitle{
+      font-size:12px; color:var(--muted); line-height:1.45;
+    }
+    .field-list{
+      padding:14px 16px 16px 16px;
+      display:grid; gap:8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size:12px;
+      color:#dff4ff;
+    }
+    .field{
+      display:flex; gap:8px; align-items:flex-start;
+      border-bottom:1px dashed rgba(255,255,255,.05);
+      padding-bottom:6px;
+    }
+    .field:last-child{border-bottom:none;padding-bottom:0}
+    .tag{
+      min-width:34px;
+      text-align:center;
+      border-radius:8px;
+      font-size:10px;
+      font-weight:900;
+      letter-spacing:1.2px;
+      padding:4px 6px;
+      margin-top:1px;
+    }
+    .pk{background:rgba(255,210,122,.18); color:var(--gold); border:1px solid rgba(255,210,122,.28)}
+    .fk{background:rgba(118,228,247,.16); color:var(--cyan); border:1px solid rgba(118,228,247,.25)}
+    .ix{background:rgba(182,156,255,.16); color:var(--violet); border:1px solid rgba(182,156,255,.25)}
+    .nn{background:rgba(122,240,196,.16); color:var(--mint); border:1px solid rgba(122,240,196,.25)}
+    .field-name{flex:1}
+    .field small{display:block;color:#7ea6bd;margin-top:3px;font-size:10px}
+
+    .sidebar{
+      background:
+        linear-gradient(180deg, rgba(8,15,24,.96), rgba(8,15,24,.99)),
+        radial-gradient(circle at 100% 0%, rgba(255,180,84,.08), transparent 0 28%);
+      display:flex; flex-direction:column; min-height:100%;
+    }
+    .sidebar-inner{padding:22px 22px 26px 22px; display:flex; flex-direction:column; gap:18px; height:100%; overflow:auto}
+    .side-card{
+      background:linear-gradient(180deg, rgba(16,30,43,.94), rgba(10,20,31,.96));
+      border:1px solid rgba(255,255,255,.08);
+      border-radius:22px;
+      padding:18px;
+      box-shadow: var(--shadow);
+    }
+    .side-title{
+      font-size:12px; text-transform:uppercase; letter-spacing:1.8px; color:var(--muted); font-weight:900; margin-bottom:10px;
+    }
+    .selection-name{
+      font-size:27px; font-weight:900; letter-spacing:-.04em; margin-bottom:8px;
+    }
+    .selection-desc{
+      color:#c2d8e6; line-height:1.6; font-size:14px; margin-bottom:14px;
+    }
+    .kv{
+      display:grid; grid-template-columns:1fr 1fr; gap:10px;
+    }
+    .mini{
+      background:rgba(255,255,255,.03);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:16px;
+      padding:12px;
+    }
+    .mini .k{font-size:11px; text-transform:uppercase; letter-spacing:1.4px; color:var(--muted); font-weight:800; margin-bottom:6px}
+    .mini .v{font-size:14px; font-weight:800}
+    .rel-list, .note-list{
+      display:grid; gap:10px;
+    }
+    .rel-item, .note-item{
+      padding:12px 13px;
+      border-radius:16px;
+      background:rgba(255,255,255,.03);
+      border:1px solid rgba(255,255,255,.06);
+      font-size:13px; line-height:1.55; color:#d9edf8;
+    }
+    .rel-item b{color:var(--gold)}
+    .inline-stat{
+      display:flex; gap:10px; flex-wrap:wrap;
+      margin-top:8px;
+    }
+    .inline-stat span{
+      display:inline-flex; align-items:center; gap:8px;
+      border-radius:999px; padding:8px 10px;
+      background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06);
+      font-size:12px; color:#d9edf8; font-weight:700;
+    }
+    .legend-grid{
+      display:grid; grid-template-columns:1fr 1fr; gap:10px;
+    }
+    .legend-item{
+      display:flex; gap:10px; align-items:center;
+      padding:10px 12px; border-radius:14px;
+      background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.06);
+      font-size:12px; font-weight:700; color:#d8eff8;
+    }
+    .swatch{width:12px;height:12px;border-radius:999px; flex:0 0 auto}
+    .footer-note{
+      color:#9bb8c9; font-size:12px; line-height:1.6;
+    }
+    .callout{
+      padding:14px 15px;
+      border-radius:18px;
+      border:1px solid rgba(255,210,122,.22);
+      background:linear-gradient(180deg, rgba(255,210,122,.08), rgba(255,210,122,.03));
+      color:#f8edcf;
+      font-size:13px; line-height:1.6;
+    }
+    .relationship-tag{
+      display:inline-flex; align-items:center; gap:8px;
+      background:rgba(118,228,247,.08);
+      color:var(--cyan);
+      border:1px solid rgba(118,228,247,.18);
+      padding:7px 10px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:800;
+      letter-spacing:1.2px;
+      text-transform:uppercase;
+      margin-bottom:10px;
+    }
+    .edge-label{
+      font-size:10px;
+      fill:#b7d8ea;
+      letter-spacing:1px;
+      text-transform:uppercase;
+      opacity:.8;
+      pointer-events:none;
+    }
+    .edge-line{
+      stroke:rgba(118,228,247,.35);
+      stroke-width:2;
+      fill:none;
+    }
+    .edge-line.money{stroke:rgba(255,180,84,.38)}
+    .edge-line.ops{stroke:rgba(122,240,196,.35)}
+    .edge-line.audit{stroke:rgba(182,156,255,.34)}
+    .edge-line.ai{stroke:rgba(255,138,179,.34)}
+    .edge-line.dimmed{opacity:.08}
+    .edge-arrow{
+      fill:rgba(118,228,247,.55);
+      opacity:.95;
+    }
+    .edge-arrow.money{fill:rgba(255,180,84,.58)}
+    .edge-arrow.ops{fill:rgba(122,240,196,.58)}
+    .edge-arrow.audit{fill:rgba(182,156,255,.55)}
+    .edge-arrow.ai{fill:rgba(255,138,179,.55)}
+    .edge-arrow.dimmed{opacity:.08}
+    .bottom-watermark{
+      position:absolute; right:26px; bottom:14px; z-index:5;
+      color:rgba(197,220,233,.42); font-size:11px; letter-spacing:2px; text-transform:uppercase; font-weight:900;
+    }
+    @media (max-width: 1320px){
+      .app{grid-template-columns:1fr}
+      .sidebar{display:none}
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="main">
+      <div class="topbar">
+        <div class="brand">
+          <div class="eyebrow"><span class="dot"></span> TPC / Terrain Private Client · blueprint data vault</div>
+          <h1>Diagrama BDD ejecutivo · multi-tenant, audit-first, provider-agnostic</h1>
+          <p class="subtitle">
+            Esquema sugerido para convertir la propuesta TPC en una base de datos coherente, operable y elegante:
+            identidad y tenant como ancla, wallet con ledger append-only, inversiones desacopladas por conector, IA con memoria contextual y una columna vertebral de approvals, operaciones y auditoría. Todo listo para hablar como ingeniería seria, no como PowerPoint con café encima.
+          </p>
+        </div>
+        <div class="metric-rail">
+          <div class="metric">
+            <div class="label">Tablas sugeridas</div>
+            <div class="value" id="metricTables">0</div>
+            <div class="hint">núcleo relacional</div>
+          </div>
+          <div class="metric">
+            <div class="label">Dominios</div>
+            <div class="value">6</div>
+            <div class="hint">bounded contexts</div>
+          </div>
+          <div class="metric">
+            <div class="label">Principio</div>
+            <div class="value" style="font-size:20px">Append-Only</div>
+            <div class="hint">ledger + audit</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="chipbar" id="chips"></div>
+
+      <div class="canvas-wrap" id="canvasWrap">
+        <div class="canvas" id="canvas">
+          <div class="zone-label" style="left:70px;top:18px;">Identity & Tenant</div>
+          <div class="zone-label" style="left:700px;top:18px;">Money / Ledger / Payments</div>
+          <div class="zone-label" style="left:1535px;top:18px;">Investments</div>
+          <div class="zone-label" style="left:75px;top:640px;">AI / Channels / Context</div>
+          <div class="zone-label" style="left:780px;top:640px;">Operations / Approvals</div>
+          <div class="zone-label" style="left:1570px;top:640px;">Audit / Integrations</div>
+          <svg class="links" id="links" width="2140" height="1420"></svg>
+        </div>
+      </div>
+
+      <div class="bottom-watermark">TPC · database blueprint · suggested schema v1</div>
+    </section>
+
+    <aside class="sidebar">
+      <div class="sidebar-inner">
+        <div class="side-card">
+          <div class="side-title">Lectura ejecutiva</div>
+          <div class="relationship-tag">Arquitectura sugerida</div>
+          <div class="selection-name" id="selectionName">organizations</div>
+          <div class="selection-desc" id="selectionDesc">
+            Tenant raíz. Todo lo demás cuelga de aquí o queda vinculado por ownership explícito para mantener aislamiento, permisos y reporting por cliente.
+          </div>
+          <div class="kv">
+            <div class="mini">
+              <div class="k">Dominio</div>
+              <div class="v" id="selectionDomain">Identity & Tenant</div>
+            </div>
+            <div class="mini">
+              <div class="k">Cardinalidad</div>
+              <div class="v" id="selectionCardinality">1 → N</div>
+            </div>
+          </div>
+          <div class="inline-stat" id="selectionStats"></div>
+        </div>
+
+        <div class="side-card">
+          <div class="side-title">Campos clave</div>
+          <div class="note-list" id="fieldNotes"></div>
+        </div>
+
+        <div class="side-card">
+          <div class="side-title">Relaciones importantes</div>
+          <div class="rel-list" id="relationshipList"></div>
+        </div>
+
+        <div class="side-card">
+          <div class="side-title">Principios de modelado</div>
+          <div class="note-list">
+            <div class="note-item"><b>Multi-tenant real:</b> usa <code>organization_id</code> en todas las tablas de negocio, RLS en PostgreSQL y claims del JWT para mantener aislamiento.</div>
+            <div class="note-item"><b>Ledger serio:</b> no guardes saldos como verdad absoluta. El saldo se deriva de <code>ledger_entries</code> y snapshots/materialized views.</div>
+            <div class="note-item"><b>Provider-agnostic:</b> los conectores externos viven detrás de <code>broker_connectors</code>, <code>provider_webhooks</code> e <code>integration_outbox</code>.</div>
+            <div class="note-item"><b>IA con memoria útil:</b> separa conversación, mensaje y memoria estructurada para evitar convertir el chat en basurero semántico.</div>
+            <div class="note-item"><b>Audit-first:</b> cada aprobación, transferencia, orden y acción sensible deja rastro en <code>audit_events</code>.</div>
+          </div>
+        </div>
+
+        <div class="side-card">
+          <div class="side-title">Leyenda</div>
+          <div class="legend-grid" id="legend"></div>
+        </div>
+
+        <div class="side-card">
+          <div class="side-title">Notas estratégicas</div>
+          <div class="callout">
+            Para demo rápida, este esquema ya permite simular WhatsApp, órdenes, approvals, portafolio y wallet sin casarte temprano con un solo proveedor. Para producción, la joya está en endurecer ledger, KYC/compliance, cifrado de PII y reconciliación de webhooks.
+          </div>
+          <p class="footer-note" style="margin-top:12px">
+            Recomendación de stack de datos: PostgreSQL 16, UUIDv7, JSONB para payloads externos, partición por tiempo en auditoría, índices compuestos por <code>organization_id + status + created_at</code> y migraciones explícitas.
+          </p>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const domains = {
+      identity:{label:'Identity & Tenant', color:'#76e4f7'},
+      money:{label:'Money / Ledger / Payments', color:'#ffb454'},
+      investments:{label:'Investments', color:'#7db7ff'},
+      ai:{label:'AI / Channels / Context', color:'#ff8ab3'},
+      operations:{label:'Operations / Approvals', color:'#7af0c4'},
+      audit:{label:'Audit / Integrations', color:'#b69cff'}
+    };
+
+    const nodes = [
+      {
+        id:'organizations', domain:'identity', x:60, y:70,
+        title:'organizations',
+        subtitle:'Tenant raíz, ownership y límites de aislamiento',
+        summary:'Representa al cliente o vehículo operativo dentro de TPC. Define configuración global, región, estado regulatorio y la frontera principal de seguridad para datos, permisos y reporting.',
+        cardinality:'1 → N sobre negocio',
+        stats:['RLS anchor','tenant scope','billing & legal'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['NN','legal_name','texto'],
+          ['IX','slug','único'],
+          ['NN','type','family_office | agency | hospital'],
+          ['NN','country_code','MX / US'],
+          ['NN','status','active | paused'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Conviene incluir configuración de zona horaria, moneda base y flags de compliance.',
+          'Evita mezclar usuarios con organizaciones: la relación vive en memberships.'
+        ]
+      },
+      {
+        id:'users', domain:'identity', x:365, y:70,
+        title:'users',
+        subtitle:'Identidad humana principal',
+        summary:'Usuario autenticable, dueño o colaborador. Se mantiene desacoplado del tenant para soportar multi-organización, staff compartido y posibles asesores externos.',
+        cardinality:'1 usuario ↔ N memberships',
+        stats:['auth principal','human identity','MFA ready'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['IX','email','único'],
+          ['NN','phone_e164','texto'],
+          ['NN','full_name','texto'],
+          ['NN','mfa_enabled','boolean'],
+          ['NN','status','active | invited | blocked'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'PII sensible debe cifrarse a nivel columna o app.',
+          'No metas permisos directos aquí; usa roles y memberships.'
+        ]
+      },
+      {
+        id:'roles', domain:'identity', x:365, y:320,
+        title:'roles',
+        subtitle:'Roles de acceso y capacidad operativa',
+        summary:'Catálogo de roles por tenant o sistema. Determina qué puede ver, aprobar o ejecutar cada actor dentro de TPC.',
+        cardinality:'1 role ↔ N memberships',
+        stats:['RBAC','policies','least privilege'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['NN','organization_id','nullable si es global'],
+          ['IX','code','OWNER / CFO / OPERATOR'],
+          ['NN','name','texto'],
+          ['NN','scope','system | tenant'],
+          ['NN','is_approver','boolean'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Se recomienda catálogo base global con override por tenant.',
+          'Para ABAC, usa claims extra o tabla de permisos derivada.'
+        ]
+      },
+      {
+        id:'organization_memberships', domain:'identity', x:60, y:320,
+        title:'organization_memberships',
+        subtitle:'Puente usuario ↔ tenant ↔ rol',
+        summary:'Tabla de unión crítica para gobernar pertenencia, rol efectivo, nivel jerárquico y vigencia de acceso.',
+        cardinality:'N ↔ N entre users y organizations',
+        stats:['membership bridge','effective role','invites'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','user_id','→ users.id'],
+          ['FK','role_id','→ roles.id'],
+          ['NN','title','CEO / EA / Trader'],
+          ['NN','status','active | invited | revoked'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Aquí cabe el nivel de aprobación, centro de costo y límites operativos.',
+          'Índice compuesto sugerido: organization_id + user_id + status.'
+        ]
+      },
+      {
+        id:'staff_profiles', domain:'identity', x:60, y:560,
+        title:'staff_profiles',
+        subtitle:'Perfil operativo para asistentes, concierge y staff',
+        summary:'Extiende la relación humana a la capa operativa: skills, disponibilidad, especialidad y rutas de escalación cuando Capataz o Mr. Shark hagan handoff.',
+        cardinality:'1 membership → 0..1 profile',
+        stats:['ops extension','skills','handoff'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','membership_id','→ organization_memberships.id'],
+          ['NN','department','concierge | finance | support'],
+          ['NN','specialty','texto'],
+          ['NN','availability_status','online | offline'],
+          ['NN','handoff_priority','entero'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Muy útil para demos con handoff humano y asignación de tareas.',
+          'Puede convivir con presence/cache en Redis para tiempo real.'
+        ]
+      },
+
+      {
+        id:'wallet_accounts', domain:'money', x:700, y:70,
+        title:'wallet_accounts',
+        subtitle:'Cuenta operativa o patrimonial visible para el usuario',
+        summary:'Abstracción de cuenta dentro de TPC. Puede representar cuenta de operación, treasury, inversión puente o sub-balance lógico por estrategia.',
+        cardinality:'1 organization → N wallet_accounts',
+        stats:['wallet core','balance view','money movement'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['NN','account_type','operating | treasury | reserve'],
+          ['IX','currency','MXN / USD'],
+          ['NN','status','active | frozen'],
+          ['NN','display_name','texto'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'El saldo mostrado al usuario no debe ser el origen de verdad contable.',
+          'Puede enlazarse a proveedor externo mediante external_ref.'
+        ]
+      },
+      {
+        id:'ledger_accounts', domain:'money', x:1010, y:70,
+        title:'ledger_accounts',
+        subtitle:'Cuentas contables internas para doble partida',
+        summary:'Catálogo contable que sostiene el ledger. Aquí viven cuentas de cash, pending, fees, settlement, provider suspense y otras necesarias para trazabilidad fina.',
+        cardinality:'1 wallet_account → N ledger_accounts',
+        stats:['double entry','append-only','accounting spine'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','wallet_account_id','→ wallet_accounts.id'],
+          ['IX','code','CASH_AVAILABLE / CASH_PENDING'],
+          ['NN','normal_side','debit | credit'],
+          ['NN','currency','MXN / USD'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Conviene separar cuentas de usuario, compensación y fees.',
+          'Código único por tenant ayuda a reporting y reconciliación.'
+        ]
+      },
+      {
+        id:'ledger_entries', domain:'money', x:700, y:330,
+        title:'ledger_entries',
+        subtitle:'Movimiento atómico del ledger',
+        summary:'Registro inmutable de cada impacto financiero. Una transferencia real genera al menos dos entradas, más las adicionales necesarias para fees, pending o settlement.',
+        cardinality:'N entries → 1 ledger_account',
+        stats:['immutable','auditable','source of truth'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','ledger_account_id','→ ledger_accounts.id'],
+          ['FK','transfer_id','nullable → money_transfers.id'],
+          ['NN','entry_side','debit | credit'],
+          ['NN','amount_minor','bigint'],
+          ['NN','booked_at','timestamp']
+        ],
+        notes:[
+          'Nunca edites: corrige con nuevas entradas.',
+          'Partición por fecha ayuda si el volumen crece duro.'
+        ]
+      },
+      {
+        id:'beneficiaries', domain:'money', x:1320, y:70,
+        title:'beneficiaries',
+        subtitle:'Destinatarios autorizados de dinero',
+        summary:'Catálogo de cuentas destino para transferencias. Permite listas blancas, verificación y políticas de riesgo antes de mover dinero.',
+        cardinality:'1 organization → N beneficiaries',
+        stats:['allowlist','risk gate','payment destination'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['NN','bank_name','texto'],
+          ['NN','account_masked','texto'],
+          ['NN','holder_name','texto'],
+          ['NN','verification_status','pending | verified'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Guardar cuenta completa cifrada; exponer solo masked en UI.',
+          'Útil asociar beneficiary_type: vendor, owner, payroll, internal.'
+        ]
+      },
+      {
+        id:'money_transfers', domain:'money', x:1010, y:330,
+        title:'money_transfers',
+        subtitle:'Intención y lifecycle del movimiento de dinero',
+        summary:'Orquesta la transferencia desde request hasta settlement. Guarda origen, destino, monto, estado, motivo y la liga hacia approvals, ledger y proveedor externo.',
+        cardinality:'1 transfer → N entries / 0..1 approval',
+        stats:['workflow anchor','state machine','provider sync'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','from_wallet_account_id','→ wallet_accounts.id'],
+          ['FK','beneficiary_id','→ beneficiaries.id'],
+          ['FK','approval_id','nullable → approvals.id'],
+          ['NN','status','draft | pending | settled | failed'],
+          ['NN','amount_minor','bigint']
+        ],
+        notes:[
+          'Aquí vive el estado operacional, no la contabilidad final.',
+          'Agrega provider_ref, failure_code y channel_origin para trazabilidad.'
+        ]
+      },
+
+      {
+        id:'portfolios', domain:'investments', x:1630, y:70,
+        title:'portfolios',
+        subtitle:'Vista patrimonial por estrategia o cuenta de inversión',
+        summary:'Agrupa posiciones, asignación objetivo, benchmark y resumen ejecutivo del portafolio. Puede representar una cuenta broker o una estrategia lógica interna.',
+        cardinality:'1 organization → N portfolios',
+        stats:['wealth view','allocation','executive summary'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['NN','name','Core / Growth / Reserve'],
+          ['NN','base_currency','USD / MXN'],
+          ['NN','risk_band','conservative | balanced | aggressive'],
+          ['NN','status','active | archived'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Recomendable almacenar snapshots diarios para performance.',
+          'Puede existir uno principal por cliente y varios satélite.'
+        ]
+      },
+      {
+        id:'risk_profiles', domain:'investments', x:1630, y:320,
+        title:'risk_profiles',
+        subtitle:'Perfil de riesgo y política de inversión',
+        summary:'Captura tolerancia, horizonte, restricciones y reglas que Mr. Shark debe respetar al recomendar o elevar órdenes.',
+        cardinality:'1 organization o user → N versions',
+        stats:['policy guardrail','suitability','IA context'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','user_id','nullable → users.id'],
+          ['NN','version','entero'],
+          ['NN','risk_score','numérico'],
+          ['NN','constraints_json','JSONB'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Versiona, no sobrescribas. Sirve para auditoría y explicabilidad.',
+          'Constraints_json puede guardar exclusiones sectoriales, límites y reglas.'
+        ]
+      },
+      {
+        id:'broker_connectors', domain:'investments', x:1940, y:70,
+        title:'broker_connectors',
+        subtitle:'Adaptadores hacia Apex, tastytrade u otros',
+        summary:'Contiene la relación técnica con el proveedor de inversión: credenciales cifradas, estado, cuentas externas y capacidades habilitadas.',
+        cardinality:'1 organization → N connectors',
+        stats:['provider abstraction','sandbox/prod','external sync'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['NN','provider_code','apex | tastytrade'],
+          ['NN','environment','sandbox | prod'],
+          ['NN','status','connected | error'],
+          ['NN','secrets_ref','vault path'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Nunca guardes secretos en claro en la DB.',
+          'Este nodo te salva de casarte temprano con un broker.'
+        ]
+      },
+      {
+        id:'portfolio_positions', domain:'investments', x:1940, y:320,
+        title:'portfolio_positions',
+        subtitle:'Posiciones vigentes o snapshot por activo',
+        summary:'Materializa holdings, costo, market value, peso y P&L por símbolo o instrumento dentro de un portafolio.',
+        cardinality:'1 portfolio → N positions',
+        stats:['holdings','PnL','snapshot ready'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','portfolio_id','→ portfolios.id'],
+          ['NN','symbol','AAPL / SPY / cash'],
+          ['NN','quantity','decimal'],
+          ['NN','avg_cost_minor','bigint'],
+          ['NN','market_value_minor','bigint'],
+          ['NN','as_of','timestamp']
+        ],
+        notes:[
+          'Si haces snapshots frecuentes, esta tabla puede ser append-only por as_of.',
+          'Índice útil: portfolio_id + symbol + as_of desc.'
+        ]
+      },
+      {
+        id:'order_intents', domain:'investments', x:1630, y:560,
+        title:'order_intents',
+        subtitle:'Instrucción previa a la orden real',
+        summary:'Mr. Shark sugiere o recibe una orden, pero antes de tocar al broker se modela como intención: contexto, aprobación requerida, simulación y rastro de decisión.',
+        cardinality:'1 intent → 0..1 approval / 0..1 provider order',
+        stats:['safe orchestration','approval-aware','recommendation bridge'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','portfolio_id','→ portfolios.id'],
+          ['FK','risk_profile_id','→ risk_profiles.id'],
+          ['FK','approval_id','nullable → approvals.id'],
+          ['NN','action','buy | sell | rebalance'],
+          ['NN','status','draft | pending | submitted']
+        ],
+        notes:[
+          'Ideal para demo porque separa “quiero hacer esto” de “ya se ejecutó”.',
+          'Puede almacenar simulated_output_json y explainability.'
+        ]
+      },
+
+      {
+        id:'channels_whatsapp', domain:'ai', x:60, y:810,
+        title:'channels_whatsapp',
+        subtitle:'Canal primario VIP',
+        summary:'Representa la configuración del número, templates, estado del webhook y metadatos del canal de WhatsApp Business usado por Mr. Shark.',
+        cardinality:'1 organization → N channels',
+        stats:['VIP channel','webhook source','message transport'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['NN','phone_number_id','texto'],
+          ['NN','provider','meta'],
+          ['NN','status','connected | degraded'],
+          ['NN','webhook_secret_ref','vault path'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Si solo habrá un número por tenant, mantén unique organization_id.',
+          'Los templates y opt-ins pueden ir en tablas auxiliares después.'
+        ]
+      },
+      {
+        id:'conversations', domain:'ai', x:365, y:810,
+        title:'conversations',
+        subtitle:'Hilo conversacional con contexto',
+        summary:'Agrupa la interacción entre usuario y agentes. Puede venir desde app o WhatsApp y conserva contexto de sesión, owner, canal y agente predominante.',
+        cardinality:'1 conversation → N messages',
+        stats:['session spine','channel aware','agent context'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','user_id','→ users.id'],
+          ['FK','whatsapp_channel_id','nullable → channels_whatsapp.id'],
+          ['NN','primary_agent','mr_shark | capataz'],
+          ['NN','status','open | closed'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Buena candidata para partición por created_at si el volumen sube.',
+          'Guarda metadata_json si quieres session state ligero.'
+        ]
+      },
+      {
+        id:'messages', domain:'ai', x:60, y:1070,
+        title:'messages',
+        subtitle:'Turnos individuales de la conversación',
+        summary:'Cada entrada o salida del sistema. Incluye payload original, texto normalizado, trazas del clasificador y referencias a acciones disparadas.',
+        cardinality:'N messages → 1 conversation',
+        stats:['turn history','NLP traces','replayable'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','conversation_id','→ conversations.id'],
+          ['FK','user_id','nullable → users.id'],
+          ['NN','direction','inbound | outbound'],
+          ['NN','message_type','text | template | command'],
+          ['NN','body_text','texto'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'No todo debe ir a memoria semántica. Primero clasifica, luego persiste.',
+          'Útil guardar intent_code, confidence y raw_payload_json.'
+        ]
+      },
+      {
+        id:'agent_memory', domain:'ai', x:365, y:1070,
+        title:'agent_memory',
+        subtitle:'Memoria estructurada para Mr. Shark y Capataz',
+        summary:'Hechos relevantes extraídos del historial: preferencias, límites, contexto financiero, instrucciones persistentes y decisiones previas útiles para la IA.',
+        cardinality:'N memories → 1 user / organization / conversation',
+        stats:['structured memory','long-term context','guardrails'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','user_id','nullable → users.id'],
+          ['FK','conversation_id','nullable → conversations.id'],
+          ['NN','memory_type','preference | limit | fact'],
+          ['NN','content_json','JSONB'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Versiona o expira recuerdos cuando sea necesario.',
+          'Aquí caben límites tipo “bloquea transferencias arriba de X”.'
+        ]
+      },
+
+      {
+        id:'tasks', domain:'operations', x:820, y:810,
+        title:'tasks',
+        subtitle:'Trabajo operativo ejecutado por Capataz',
+        summary:'Unidad básica de operación. Desde pagos programados hasta seguimiento a proveedor, concierge o tareas internas disparadas por chat o dashboard.',
+        cardinality:'1 organization → N tasks',
+        stats:['ops engine','assignable','workflow-ready'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','created_by_user_id','nullable → users.id'],
+          ['FK','assignee_membership_id','nullable → organization_memberships.id'],
+          ['NN','task_type','payment | concierge | review'],
+          ['NN','status','open | blocked | done'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Si crece la complejidad, después puedes separar workflow templates y task instances.',
+          'Ideal para vincular source_message_id o source_intent_id.'
+        ]
+      },
+      {
+        id:'reminders', domain:'operations', x:1130, y:810,
+        title:'reminders',
+        subtitle:'Recordatorios y wake-ups del sistema',
+        summary:'Agenda recordatorios para usuario o staff, desde vencimientos hasta follow-up de tareas o autorizaciones pendientes.',
+        cardinality:'1 task → N reminders',
+        stats:['time-based nudges','automation','follow-up'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','task_id','→ tasks.id'],
+          ['FK','target_user_id','nullable → users.id'],
+          ['NN','scheduled_for','timestamp'],
+          ['NN','status','scheduled | sent | cancelled'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Perfecta para cron/queue workers y reintentos controlados.',
+          'Puede reutilizar el mismo motor para WhatsApp o push.'
+        ]
+      },
+      {
+        id:'approval_policies', domain:'operations', x:1440, y:810,
+        title:'approval_policies',
+        subtitle:'Reglas y umbrales de aprobación',
+        summary:'Define qué necesita aprobación, quién puede darla y bajo qué límites de monto, tipo de acción, horario o riesgo.',
+        cardinality:'1 organization → N policies',
+        stats:['governance','thresholds','control plane'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['NN','policy_code','MONEY_GT_50K'],
+          ['NN','action_scope','transfer | order | task'],
+          ['NN','threshold_minor','bigint'],
+          ['NN','requires_role_code','OWNER / CFO'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Se vuelve oro puro cuando el producto entra a modo enterprise.',
+          'Conviene soportar condiciones JSONB si habrá reglas complejas.'
+        ]
+      },
+      {
+        id:'approvals', domain:'operations', x:1130, y:1070,
+        title:'approvals',
+        subtitle:'Expediente de autorización',
+        summary:'Caso formal de aprobación. Vive entre la intención y la ejecución, conserva solicitante, aprobador, estado, motivo, timestamps y evidencia.',
+        cardinality:'1 approval → 0..1 transfer / 0..1 order_intent',
+        stats:['decision trace','who approved','stateful'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','policy_id','→ approval_policies.id'],
+          ['FK','requested_by_user_id','→ users.id'],
+          ['FK','approved_by_user_id','nullable → users.id'],
+          ['NN','status','pending | approved | rejected'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Guarda reason_text, expires_at y final_decision_at.',
+          'Muy útil agregar artifact_type y artifact_id para generic linking.'
+        ]
+      },
+      {
+        id:'events', domain:'operations', x:820, y:1070,
+        title:'events',
+        subtitle:'Timeline operativo y estados de negocio',
+        summary:'Registro de hitos de tareas, transfers, approvals u órdenes. Sirve para activity feed, timeline de caso y debugging narrativo del sistema.',
+        cardinality:'N events → múltiples artefactos',
+        stats:['activity feed','timeline','debuggable state'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['NN','entity_type','task | transfer | approval | order'],
+          ['NN','entity_id','uuid'],
+          ['NN','event_code','created | escalated | settled'],
+          ['NN','payload_json','JSONB'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Si quieres elegancia operativa, esta tabla alimenta el dashboard ejecutivo.',
+          'No reemplaza audit_events; sirve para timeline funcional.'
+        ]
+      },
+
+      {
+        id:'provider_webhooks', domain:'audit', x:1630, y:810,
+        title:'provider_webhooks',
+        subtitle:'Entrada cruda desde proveedores externos',
+        summary:'Persistencia de webhooks de broker, pagos, WhatsApp o emisor de tarjetas. Guarda raw payload, headers, firma y estado de procesamiento.',
+        cardinality:'N webhooks → 1 provider event stream',
+        stats:['raw ingress','replayable','idempotency'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','nullable → organizations.id'],
+          ['NN','provider_code','meta | apex | stp'],
+          ['NN','event_type','texto'],
+          ['NN','signature_valid','boolean'],
+          ['NN','processing_status','new | done | failed'],
+          ['NN','received_at','timestamp']
+        ],
+        notes:[
+          'Jamás proceses algo crítico sin guardar el raw payload.',
+          'Índice obligatorio: provider_code + external_event_id unique.'
+        ]
+      },
+      {
+        id:'integration_outbox', domain:'audit', x:1940, y:810,
+        title:'integration_outbox',
+        subtitle:'Salida confiable hacia integraciones',
+        summary:'Patrón outbox para publicar eventos o comandos a proveedores sin romper consistencia transaccional entre la DB y la cola.',
+        cardinality:'N rows → integraciones externas',
+        stats:['reliable delivery','event publication','retry-safe'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','nullable → organizations.id'],
+          ['NN','topic','transfer.created / order.submitted'],
+          ['NN','payload_json','JSONB'],
+          ['NN','dispatch_status','pending | sent | dead'],
+          ['NN','next_retry_at','timestamp'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Muy recomendable si habrá workers y webhooks reales.',
+          'Le quita drama a fallas intermitentes de red o proveedor.'
+        ]
+      },
+      {
+        id:'audit_events', domain:'audit', x:1630, y:1070,
+        title:'audit_events',
+        subtitle:'Rastro inviolable de acciones sensibles',
+        summary:'Bitácora de cumplimiento y seguridad. Registra actor, acción, recurso, antes/después, IP, canal y motivo para reconstruir quién hizo qué y cuándo.',
+        cardinality:'N audit rows → cualquier artefacto',
+        stats:['compliance','security trail','forensics'],
+        fields:[
+          ['PK','id','uuidv7'],
+          ['FK','organization_id','→ organizations.id'],
+          ['FK','actor_user_id','nullable → users.id'],
+          ['NN','resource_type','transfer | approval | role'],
+          ['NN','resource_id','uuid'],
+          ['NN','action','create | approve | reject | send'],
+          ['NN','created_at','timestamp']
+        ],
+        notes:[
+          'Separa audit funcional de seguridad si el volumen o compliance lo exige.',
+          'Columnas before_json / after_json ayudan para trazabilidad seria.'
+        ]
+      }
+    ];
+
+    const edges = [
+      ['organizations','organization_memberships','1:N','identity'],
+      ['users','organization_memberships','1:N','identity'],
+      ['roles','organization_memberships','1:N','identity'],
+      ['organization_memberships','staff_profiles','1:0..1','operations'],
+      ['organizations','wallet_accounts','1:N','money'],
+      ['wallet_accounts','ledger_accounts','1:N','money'],
+      ['ledger_accounts','ledger_entries','1:N','money'],
+      ['organizations','beneficiaries','1:N','money'],
+      ['wallet_accounts','money_transfers','1:N','money'],
+      ['beneficiaries','money_transfers','1:N','money'],
+      ['money_transfers','ledger_entries','1:N','money'],
+      ['organizations','portfolios','1:N','investments'],
+      ['portfolios','portfolio_positions','1:N','investments'],
+      ['organizations','risk_profiles','1:N','investments'],
+      ['organizations','broker_connectors','1:N','audit'],
+      ['portfolios','order_intents','1:N','investments'],
+      ['risk_profiles','order_intents','1:N','investments'],
+      ['organizations','channels_whatsapp','1:N','ai'],
+      ['organizations','conversations','1:N','ai'],
+      ['users','conversations','1:N','ai'],
+      ['channels_whatsapp','conversations','1:N','ai'],
+      ['conversations','messages','1:N','ai'],
+      ['users','agent_memory','1:N','ai'],
+      ['conversations','agent_memory','1:N','ai'],
+      ['organizations','tasks','1:N','operations'],
+      ['tasks','reminders','1:N','operations'],
+      ['organization_memberships','tasks','1:N','operations'],
+      ['organizations','approval_policies','1:N','operations'],
+      ['approval_policies','approvals','1:N','operations'],
+      ['users','approvals','1:N','operations'],
+      ['organizations','events','1:N','operations'],
+      ['approvals','money_transfers','1:0..1','operations'],
+      ['approvals','order_intents','1:0..1','operations'],
+      ['organizations','provider_webhooks','1:N','audit'],
+      ['organizations','integration_outbox','1:N','audit'],
+      ['organizations','audit_events','1:N','audit'],
+      ['users','audit_events','1:N','audit'],
+      ['money_transfers','audit_events','1:N','audit'],
+      ['order_intents','audit_events','1:N','audit'],
+      ['messages','audit_events','1:N','audit'],
+      ['provider_webhooks','events','1:N','audit']
+    ];
+
+    const chipDefs = [
+      {id:'all', label:'Todos los dominios'},
+      {id:'identity', label:domains.identity.label},
+      {id:'money', label:domains.money.label},
+      {id:'investments', label:domains.investments.label},
+      {id:'ai', label:domains.ai.label},
+      {id:'operations', label:domains.operations.label},
+      {id:'audit', label:domains.audit.label}
+    ];
+
+    const canvas = document.getElementById('canvas');
+    const links = document.getElementById('links');
+    const chips = document.getElementById('chips');
+    const legend = document.getElementById('legend');
+
+    document.getElementById('metricTables').textContent = nodes.length;
+
+    chipDefs.forEach((chip, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'chip' + (idx===0 ? ' active' : '');
+      btn.dataset.filter = chip.id;
+      btn.textContent = chip.label;
+      btn.addEventListener('click', () => setFilter(chip.id, btn));
+      chips.appendChild(btn);
+    });
+
+    [
+      ['Identity & Tenant', domains.identity.color],
+      ['Money / Ledger / Payments', domains.money.color],
+      ['Investments', domains.investments.color],
+      ['AI / Channels / Context', domains.ai.color],
+      ['Operations / Approvals', domains.operations.color],
+      ['Audit / Integrations', domains.audit.color],
+      ['PK','rgba(255,210,122,.9)'],
+      ['FK','rgba(118,228,247,.9)'],
+      ['NN / Required','rgba(122,240,196,.9)'],
+      ['IX / Unique or indexed','rgba(182,156,255,.9)']
+    ].forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'legend-item';
+      el.innerHTML = `<span class="swatch" style="background:${item[1]}"></span><span>${item[0]}</span>`;
+      legend.appendChild(el);
+    });
+
+    const nodeEls = new Map();
+
+    function renderNodes(){
+      nodes.forEach(node => {
+        const el = document.createElement('article');
+        el.className = 'table-node';
+        el.dataset.id = node.id;
+        el.dataset.domain = node.domain;
+        el.style.left = `${node.x}px`;
+        el.style.top = `${node.y}px`;
+
+        const pillBg = domains[node.domain].color;
+        const topFields = node.fields.slice(0, 4).map(field => {
+          const cls = field[0].toLowerCase();
+          return `
+            <div class="field">
+              <span class="tag ${cls}">${field[0]}</span>
+              <div class="field-name">${field[1]}<small>${field[2]}</small></div>
+            </div>
+          `;
+        }).join('');
+
+        el.innerHTML = `
+          <div class="node-top">
+            <div class="domain-pill" style="background:${pillBg};">
+              <span class="tiny"></span>${domains[node.domain].label}
+            </div>
+            <div class="node-title">${node.title}</div>
+            <div class="node-subtitle">${node.subtitle}</div>
+          </div>
+          <div class="field-list">${topFields}</div>
+        `;
+        el.addEventListener('click', () => selectNode(node.id));
+        canvas.appendChild(el);
+        nodeEls.set(node.id, el);
+      });
+    }
+
+    function getCenter(id){
+      const node = nodes.find(n => n.id === id);
+      const width = 280;
+      const height = Math.max(154, 150 + Math.min(3, node.fields.length-4) * 10);
+      return {x: node.x + width / 2, y: node.y + height / 2};
+    }
+
+    function edgeColor(kind){
+      if(kind === 'money') return 'money';
+      if(kind === 'operations') return 'ops';
+      if(kind === 'audit' || kind === 'investments') return kind === 'investments' ? '' : 'audit';
+      if(kind === 'ai') return 'ai';
+      if(kind === 'identity') return '';
+      return '';
+    }
+
+    function createArrowHead(cx, cy, angle, cls){
+      const size = 8;
+      const p1x = cx, p1y = cy;
+      const p2x = cx - size * Math.cos(angle - Math.PI / 6);
+      const p2y = cy - size * Math.sin(angle - Math.PI / 6);
+      const p3x = cx - size * Math.cos(angle + Math.PI / 6);
+      const p3y = cy - size * Math.sin(angle + Math.PI / 6);
+      return `<polygon class="edge-arrow ${cls}" points="${p1x},${p1y} ${p2x},${p2y} ${p3x},${p3y}" />`;
+    }
+
+    function renderEdges(){
+      const fragments = [];
+      edges.forEach((edge, i) => {
+        const [from, to, label, kind] = edge;
+        const a = getCenter(from);
+        const b = getCenter(to);
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        const bend = Math.abs(a.x - b.x) > 420 ? 80 : 38;
+        const curveX = midX;
+        const curveY = midY + (a.y < b.y ? bend : -bend);
+        const cls = edgeColor(kind);
+        const path = `M ${a.x} ${a.y} Q ${curveX} ${curveY} ${b.x} ${b.y}`;
+        const angle = Math.atan2(b.y - curveY, b.x - curveX);
+        fragments.push(`
+          <g class="edge-group" data-from="${from}" data-to="${to}" data-kind="${kind}">
+            <path d="${path}" class="edge-line ${cls}" />
+            ${createArrowHead(b.x, b.y, angle, cls)}
+            <text x="${curveX}" y="${curveY - 8}" text-anchor="middle" class="edge-label">${label}</text>
+          </g>
+        `);
+      });
+      links.innerHTML = fragments.join('');
+    }
+
+    function selectNode(id){
+      const node = nodes.find(n => n.id === id);
+      if(!node) return;
+      nodeEls.forEach(el => el.classList.remove('selected'));
+      const active = nodeEls.get(id);
+      active.classList.add('selected');
+
+      document.getElementById('selectionName').textContent = node.title;
+      document.getElementById('selectionDesc').textContent = node.summary;
+      document.getElementById('selectionDomain').textContent = domains[node.domain].label;
+      document.getElementById('selectionCardinality').textContent = node.cardinality;
+
+      const stats = document.getElementById('selectionStats');
+      stats.innerHTML = node.stats.map(s => `<span>${s}</span>`).join('');
+
+      const fieldNotes = document.getElementById('fieldNotes');
+      fieldNotes.innerHTML = node.fields.map(field => `
+        <div class="note-item"><b>${field[1]}</b><br><span style="color:#9bc0d3">${field[0]} · ${field[2]}</span></div>
+      `).join('');
+
+      const relationships = [];
+      edges.forEach(edge => {
+        if(edge[0] === id){
+          const target = nodes.find(n => n.id === edge[1]);
+          relationships.push(`<div class="rel-item"><b>${node.title}</b> → ${target.title}<br><span style="color:#9bc0d3">${edge[2]} · ${domains[target.domain].label}</span></div>`);
+        }
+        if(edge[1] === id){
+          const source = nodes.find(n => n.id === edge[0]);
+          relationships.push(`<div class="rel-item">${source.title} → <b>${node.title}</b><br><span style="color:#9bc0d3">${edge[2]} · ${domains[source.domain].label}</span></div>`);
+        }
+      });
+      node.notes.forEach(note => relationships.push(`<div class="rel-item">${note}</div>`));
+      document.getElementById('relationshipList').innerHTML = relationships.join('');
+    }
+
+    function setFilter(filter, btn){
+      document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      btn.classList.add('active');
+      const edgeGroups = [...document.querySelectorAll('.edge-group')];
+
+      nodeEls.forEach((el, id) => {
+        const node = nodes.find(n => n.id === id);
+        el.classList.remove('dimmed','hidden');
+        if(filter !== 'all' && node.domain !== filter){
+          el.classList.add('dimmed');
+        }
+      });
+
+      edgeGroups.forEach(edgeEl => {
+        const fromNode = nodes.find(n => n.id === edgeEl.dataset.from);
+        const toNode = nodes.find(n => n.id === edgeEl.dataset.to);
+        edgeEl.querySelectorAll('.edge-line, .edge-arrow').forEach(shape => shape.classList.remove('dimmed'));
+        if(filter !== 'all' && fromNode.domain !== filter && toNode.domain !== filter){
+          edgeEl.querySelectorAll('.edge-line, .edge-arrow').forEach(shape => shape.classList.add('dimmed'));
+        }
+      });
+    }
+
+    renderNodes();
+    renderEdges();
+    selectNode('organizations');
+
+    const wrap = document.getElementById('canvasWrap');
+    wrap.scrollLeft = 140;
+    wrap.scrollTop = 0;
+  </script>
+</body>
+</html>

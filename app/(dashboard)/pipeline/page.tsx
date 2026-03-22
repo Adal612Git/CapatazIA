@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { CarFront, CircleDollarSign, FileSpreadsheet, Handshake, Plus } from "lucide-react";
 import { ModuleHeader } from "@/components/module-header";
-import { creditStatusLabels, prospectStatusLabels, salesStageLabels, testDriveStatusLabels } from "@/lib/automotive";
+import { getDepartmentLabel, getDomainConfig } from "@/lib/domain-config";
 import {
   canManageCommercialEntityByScope,
   canManageCreditFile,
@@ -14,7 +14,6 @@ import {
   canViewProspect,
   canViewSalesOperation,
   canViewTestDrive,
-  departmentLabel,
   isSalesUser,
 } from "@/lib/permissions";
 import { useCurrentUser, useAppStore } from "@/lib/store";
@@ -29,6 +28,7 @@ function defaultTestDriveSlot() {
 
 export default function PipelinePage() {
   const currentUser = useCurrentUser();
+  const systemMode = useAppStore((state) => state.systemMode);
   const users = useAppStore((state) => state.users);
   const prospects = useAppStore((state) => state.prospects);
   const testDrives = useAppStore((state) => state.testDrives);
@@ -44,6 +44,8 @@ export default function PipelinePage() {
   const createCreditFileForOperation = useAppStore((state) => state.createCreditFileForOperation);
   const updateCreditFileStatus = useAppStore((state) => state.updateCreditFileStatus);
   const toggleCreditDocument = useAppStore((state) => state.toggleCreditDocument);
+  const domain = getDomainConfig(systemMode);
+  const { creditStatusLabels, prospectStatusLabels, salesStageLabels, testDriveStatusLabels } = domain;
 
   const sellers = users.filter((user) => user.role === "operator" && user.department === "sales");
   const visibleProspects = useMemo(
@@ -70,9 +72,9 @@ export default function PipelinePage() {
   const [prospectForm, setProspectForm] = useState({
     customerName: "",
     salespersonId: currentUser?.role === "operator" ? currentUser.id : visibleSellers[0]?.id ?? "",
-    agency: currentUser?.site ?? visibleSellers[0]?.site ?? "Volkswagen Puebla Centro",
-    source: "Guardia piso",
-    vehicleInterest: "Taos Highline",
+    agency: currentUser?.site ?? visibleSellers[0]?.site ?? (systemMode === "hospital" ? "Hospital Santa Emilia Central" : "Volkswagen Puebla Centro"),
+    source: systemMode === "hospital" ? "Consulta externa" : "Guardia piso",
+    vehicleInterest: systemMode === "hospital" ? "Ingreso programado" : "Taos Highline",
     financingRequired: true,
     notes: "",
   });
@@ -98,7 +100,7 @@ export default function PipelinePage() {
         />
         <section className="panel">
           <div className="status status-warning">
-            Tu perfil actual pertenece a {currentUser ? departmentLabel(currentUser.department) : "otra area"} y no puede operar pipeline de ventas.
+            Tu perfil actual pertenece a {currentUser ? getDepartmentLabel(systemMode, currentUser.department) : "otra area"} y no puede operar este pipeline.
           </div>
         </section>
       </div>
@@ -109,8 +111,9 @@ export default function PipelinePage() {
     <div className="stack-lg">
       <ModuleHeader
         eyebrow="Pipeline comercial"
-        title="Prospecto, prueba, negociacion y cierre"
-        description="Embudo editable con operaciones y expediente de credito sincronizados con el runtime del Capataz."
+        title={domain.pipelineTitle}
+        description={domain.pipelineDescription}
+        actions={<span className="report-chip">{systemMode === "hospital" ? "Admissions flow" : "Revenue flow"}</span>}
       />
 
       <section className="support-grid">
@@ -118,21 +121,21 @@ export default function PipelinePage() {
           <div className="panel-header">
             <div>
               <p className="eyebrow">Alta rapida</p>
-              <h3>Nuevo prospecto</h3>
+              <h3>Nuevo {domain.leadSingular}</h3>
             </div>
             <Plus className="icon-accent" size={18} />
           </div>
           <div className="form-grid">
             <label className="field">
-              <span>Cliente</span>
+              <span>{systemMode === "hospital" ? "Paciente" : "Cliente"}</span>
               <input
                 value={prospectForm.customerName}
                 onChange={(event) => setProspectForm((state) => ({ ...state, customerName: event.target.value }))}
-                placeholder="Nombre del prospecto"
+                placeholder={systemMode === "hospital" ? "Nombre del paciente" : "Nombre del prospecto"}
               />
             </label>
             <label className="field">
-              <span>Vendedor</span>
+              <span>{systemMode === "hospital" ? "Coordinador" : "Vendedor"}</span>
               <select
                 value={prospectForm.salespersonId}
                 onChange={(event) => {
@@ -152,7 +155,7 @@ export default function PipelinePage() {
               </select>
             </label>
             <label className="field">
-              <span>Agencia</span>
+              <span>{systemMode === "hospital" ? "Hospital" : "Agencia"}</span>
               <input
                 value={prospectForm.agency}
                 onChange={(event) => setProspectForm((state) => ({ ...state, agency: event.target.value }))}
@@ -166,7 +169,7 @@ export default function PipelinePage() {
               />
             </label>
             <label className="field">
-              <span>Interes</span>
+              <span>{domain.interestLabel}</span>
               <input
                 value={prospectForm.vehicleInterest}
                 onChange={(event) => setProspectForm((state) => ({ ...state, vehicleInterest: event.target.value }))}
@@ -189,7 +192,11 @@ export default function PipelinePage() {
               <textarea
                 value={prospectForm.notes}
                 onChange={(event) => setProspectForm((state) => ({ ...state, notes: event.target.value }))}
-                placeholder="Enganche listo, usado a cuenta, descuento pendiente..."
+                placeholder={
+                  systemMode === "hospital"
+                    ? "Autorizacion pendiente, cama por confirmar, preparacion clinica..."
+                    : "Enganche listo, usado a cuenta, descuento pendiente..."
+                }
               />
             </label>
           </div>
@@ -216,7 +223,7 @@ export default function PipelinePage() {
             }}
           >
             <Plus size={16} />
-            Registrar prospecto
+            Registrar {domain.leadSingular}
           </button>
         </article>
 
@@ -235,19 +242,19 @@ export default function PipelinePage() {
                 <Handshake className="icon-accent" size={16} />
               </div>
               <strong>{visibleProspects.filter((prospect) => prospect.status !== "closed_won" && prospect.status !== "closed_lost").length}</strong>
-              <p>Seguimiento vivo.</p>
+              <p>{domain.leadPlural} vivas.</p>
             </article>
             <article className="metric-card soft-section">
               <div className="metric-top">
-                <span className="metric-label">Pruebas</span>
+                <span className="metric-label">{systemMode === "hospital" ? "Valoraciones" : "Pruebas"}</span>
                 <CarFront className="icon-accent" size={16} />
               </div>
               <strong>{visibleTestDrives.filter((testDrive) => testDrive.status === "scheduled").length}</strong>
-              <p>Agendadas hoy.</p>
+              <p>{domain.testDrivePlural} de hoy.</p>
             </article>
             <article className="metric-card soft-section">
               <div className="metric-top">
-                <span className="metric-label">Operaciones</span>
+                <span className="metric-label">{systemMode === "hospital" ? "Atenciones" : "Operaciones"}</span>
                 <CircleDollarSign className="icon-accent" size={16} />
               </div>
               <strong>{visibleOperations.filter((operation) => operation.stage !== "closed_won" && operation.stage !== "closed_lost").length}</strong>
@@ -255,7 +262,7 @@ export default function PipelinePage() {
             </article>
             <article className="metric-card soft-section">
               <div className="metric-top">
-                <span className="metric-label">Expedientes</span>
+                <span className="metric-label">{systemMode === "hospital" ? "Autorizaciones" : "Expedientes"}</span>
                 <FileSpreadsheet className="icon-accent" size={16} />
               </div>
               <strong>{visibleCreditFiles.filter((creditFile) => creditFile.status === "missing_documents").length}</strong>
@@ -269,7 +276,7 @@ export default function PipelinePage() {
         <article className="panel flow-column stack-sm">
           <div className="flow-column-header">
             <div>
-              <p className="eyebrow">Prospeccion</p>
+              <p className="eyebrow">{systemMode === "hospital" ? "Ingreso" : "Prospeccion"}</p>
               <h3>{groupedProspects.prospecting.length}</h3>
             </div>
           </div>
@@ -289,10 +296,10 @@ export default function PipelinePage() {
                   {currentUser && canManageProspect(currentUser, prospect) ? (
                     <>
                       <button className="button-secondary" type="button" onClick={() => advanceProspectStatus(prospect.id, "follow_up", currentUser.id)}>
-                        Seguimiento
+                        {systemMode === "hospital" ? "Coordinar" : "Seguimiento"}
                       </button>
                       <button className="button-primary" type="button" onClick={() => scheduleTestDrive(prospect.id, defaultTestDriveSlot(), currentUser.id)}>
-                        Agendar prueba
+                        {systemMode === "hospital" ? "Agendar valoracion" : "Agendar prueba"}
                       </button>
                     </>
                   ) : null}
@@ -305,7 +312,7 @@ export default function PipelinePage() {
         <article className="panel flow-column stack-sm">
           <div className="flow-column-header">
             <div>
-              <p className="eyebrow">Prueba de manejo</p>
+              <p className="eyebrow">{systemMode === "hospital" ? "Valoracion" : "Prueba de manejo"}</p>
               <h3>{groupedProspects.testDrive.length}</h3>
             </div>
           </div>
@@ -324,7 +331,7 @@ export default function PipelinePage() {
                       {drive ? (
                         <>
                           <button className="button-secondary" type="button" onClick={() => updateTestDriveStatus(drive.id, "completed", currentUser.id)}>
-                            Completar prueba
+                            {systemMode === "hospital" ? "Completar valoracion" : "Completar prueba"}
                           </button>
                           <button className="button-ghost" type="button" onClick={() => updateTestDriveStatus(drive.id, "no_show", currentUser.id)}>
                             No show
@@ -332,7 +339,7 @@ export default function PipelinePage() {
                         </>
                       ) : (
                         <button className="button-primary" type="button" onClick={() => scheduleTestDrive(prospect.id, defaultTestDriveSlot(), currentUser.id)}>
-                          Crear agenda
+                          {systemMode === "hospital" ? "Crear valoracion" : "Crear agenda"}
                         </button>
                       )}
                     </>
@@ -346,7 +353,7 @@ export default function PipelinePage() {
         <article className="panel flow-column stack-sm">
           <div className="flow-column-header">
             <div>
-              <p className="eyebrow">Negociacion</p>
+              <p className="eyebrow">{systemMode === "hospital" ? "Coordinacion" : "Negociacion"}</p>
               <h3>{groupedProspects.negotiation.length}</h3>
             </div>
           </div>
@@ -365,15 +372,15 @@ export default function PipelinePage() {
                     <>
                       {!operation ? (
                         <button className="button-primary" type="button" onClick={() => createSalesOperationFromProspect(prospect.id, currentUser.id)}>
-                          Abrir operacion
+                          {systemMode === "hospital" ? "Abrir atencion" : "Abrir operacion"}
                         </button>
                       ) : (
                         <>
                           <button className="button-secondary" type="button" onClick={() => updateSalesOperationStage(operation.id, "credit_review", currentUser.id)}>
-                            A credito
+                            {systemMode === "hospital" ? "A autorizacion" : "A credito"}
                           </button>
                           <button className="button-primary" type="button" onClick={() => updateSalesOperationStage(operation.id, "ready_to_close", currentUser.id)}>
-                            Lista para cierre
+                            {systemMode === "hospital" ? "Lista para ingreso" : "Lista para cierre"}
                           </button>
                         </>
                       )}
@@ -388,7 +395,7 @@ export default function PipelinePage() {
         <article className="panel flow-column stack-sm">
           <div className="flow-column-header">
             <div>
-              <p className="eyebrow">Cierre</p>
+              <p className="eyebrow">{systemMode === "hospital" ? "Atendida" : "Cierre"}</p>
               <h3>{groupedProspects.closed.length}</h3>
             </div>
           </div>
@@ -409,8 +416,8 @@ export default function PipelinePage() {
         <article className="panel stack-md">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Operacion de venta</p>
-              <h3>Cierres, probabilidad y siguiente paso</h3>
+              <p className="eyebrow">{systemMode === "hospital" ? "Operacion asistencial" : "Operacion de venta"}</p>
+              <h3>{systemMode === "hospital" ? "Ingresos, probabilidad y siguiente paso" : "Cierres, probabilidad y siguiente paso"}</h3>
             </div>
             <CircleDollarSign className="icon-accent" size={18} />
           </div>
@@ -435,7 +442,7 @@ export default function PipelinePage() {
                   <div className="chip-row">
                     <span className="pill">{operation.agency}</span>
                     <span className="pill">{operation.financier}</span>
-                    <span className="pill">Subvencion: {operation.subsidyType}</span>
+                    <span className="pill">{domain.subsidyLabel}: {operation.subsidyType}</span>
                   </div>
                   <div className="form-grid">
                     <label className="field">
@@ -487,22 +494,22 @@ export default function PipelinePage() {
                         </button>
                         {operation.financingRequired && !creditFile ? (
                           <button className="button-secondary" type="button" onClick={() => createCreditFileForOperation(operation.id, currentUser.id)}>
-                            Abrir expediente
+                            {systemMode === "hospital" ? "Abrir autorizacion" : "Abrir expediente"}
                           </button>
                         ) : null}
                         {operation.stage !== "ready_to_close" ? (
                           <button className="button-ghost" type="button" onClick={() => updateSalesOperationStage(operation.id, "ready_to_close", currentUser.id)}>
-                            Pasar a cierre
+                            {systemMode === "hospital" ? "Pasar a ingreso" : "Pasar a cierre"}
                           </button>
                         ) : null}
                         {operation.stage !== "closed_won" ? (
                           <button className="button-primary" type="button" onClick={() => updateSalesOperationStage(operation.id, "closed_won", currentUser.id)}>
-                            Ganar
+                            {systemMode === "hospital" ? "Atender" : "Ganar"}
                           </button>
                         ) : null}
                         {operation.stage !== "closed_lost" ? (
                           <button className="button-ghost" type="button" onClick={() => updateSalesOperationStage(operation.id, "closed_lost", currentUser.id)}>
-                            Perder
+                            {systemMode === "hospital" ? "Cancelar" : "Perder"}
                           </button>
                         ) : null}
                       </>
@@ -517,8 +524,8 @@ export default function PipelinePage() {
         <article className="panel stack-md">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">Expediente de credito</p>
-              <h3>Documentos y dictamen</h3>
+              <p className="eyebrow">{systemMode === "hospital" ? "Autorizacion y expediente" : "Expediente de credito"}</p>
+              <h3>{systemMode === "hospital" ? "Documentos y dictamen asegurador" : "Documentos y dictamen"}</h3>
             </div>
             <FileSpreadsheet className="icon-accent" size={18} />
           </div>
@@ -549,12 +556,12 @@ export default function PipelinePage() {
                     <>
                       {creditFile.status !== "submitted" ? (
                         <button className="button-secondary" type="button" onClick={() => updateCreditFileStatus(creditFile.id, "submitted", currentUser.id)}>
-                          Enviar
+                          {systemMode === "hospital" ? "Enviar a revision" : "Enviar"}
                         </button>
                       ) : null}
                       {creditFile.status !== "approved" ? (
                         <button className="button-primary" type="button" onClick={() => updateCreditFileStatus(creditFile.id, "approved", currentUser.id)}>
-                          Aprobar
+                          {systemMode === "hospital" ? "Autorizar" : "Aprobar"}
                         </button>
                       ) : null}
                       {creditFile.status !== "rejected" ? (
